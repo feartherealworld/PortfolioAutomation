@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRW Signal Bot — Setup Guide</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #21262d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149;
+    --code-bg: #161b22;
+  }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.7; padding: 0; }
+  .container { max-width: 820px; margin: 0 auto; padding: 40px 24px; }
+  h1 { font-size: 2em; margin-bottom: 8px; }
+  h2 { font-size: 1.3em; margin: 40px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1.05em; margin: 20px 0 8px; color: var(--accent); }
+  p { margin: 10px 0; color: var(--muted); }
+  p strong { color: var(--text); }
+  a { color: var(--accent); }
+  ul, ol { padding-left: 20px; margin: 10px 0; color: var(--muted); }
+  li { margin: 4px 0; }
+  li strong { color: var(--text); }
+  code { background: var(--code-bg); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.88em; color: #e6edf3; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; margin: 12px 0; }
+  pre code { background: none; border: none; padding: 0; font-size: 0.9em; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin: 16px 0; }
+  .warn { background: #2d1b00; border: 1px solid #5a3e1b; border-radius: 8px; padding: 16px; margin: 16px 0; color: var(--yellow); }
+  .warn strong { color: #f0a92e; }
+  .info { background: #0c2340; border: 1px solid #1f4a7a; border-radius: 8px; padding: 16px; margin: 16px 0; color: #79c0ff; }
+  .success { background: #0d2b1a; border: 1px solid #1a5c33; border-radius: 8px; padding: 16px; margin: 16px 0; color: var(--green); }
+  .step { display: flex; gap: 16px; margin: 20px 0; }
+  .step-num { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: #1f6feb; color: #fff; font-weight: 700; font-size: 0.9em; flex-shrink: 0; margin-top: 2px; }
+  .step-body { flex: 1; }
+  .step-body h3 { margin-top: 0; }
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin: 24px 0; }
+  .toc h3 { margin-top: 0; color: var(--text); margin-bottom: 12px; }
+  .toc ol { color: var(--muted); }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.9em; }
+  th { text-align: left; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-weight: 600; }
+  td { padding: 8px 12px; border: 1px solid var(--border); color: var(--muted); }
+  td strong { color: var(--text); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }
+  .badge-green { background: #1a7f37; color: #fff; }
+  .badge-blue { background: #1f6feb; color: #fff; }
+  .badge-yellow { background: #5a3e00; color: #f0a92e; }
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; }
+  header h1 { font-size: 1.3em; margin: 0; }
+  header p { margin: 2px 0 0; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="max-width:820px;margin:0 auto">
+    <h1>TRW Signal Bot</h1>
+    <p style="color:var(--muted)">Full setup guide — from zero to automated trading</p>
+  </div>
+</header>
+
+<div class="container">
+
+<div class="toc">
+  <h3>Contents</h3>
+  <ol>
+    <li><a href="#how-it-works">How It Works</a></li>
+    <li><a href="#what-you-need">What You Need</a></li>
+    <li><a href="#step1">Step 1 — Get Your TRW Session Token</a></li>
+    <li><a href="#step2">Step 2 — Set Up Hyperliquid API</a></li>
+    <li><a href="#step3">Step 3 — Set Up Modal</a></li>
+    <li><a href="#step4">Step 4 — Set Up Slack Notifications</a></li>
+    <li><a href="#step5">Step 5 — Install & Deploy</a></li>
+    <li><a href="#step6">Step 6 — Test Everything</a></li>
+    <li><a href="#dashboard">Using the Dashboard</a></li>
+    <li><a href="#maintenance">Maintenance</a></li>
+    <li><a href="#security">Security & Trust</a></li>
+    <li><a href="#faq">FAQ</a></li>
+  </ol>
+</div>
+
+<!-- HOW IT WORKS -->
+<h2 id="how-it-works">How It Works</h2>
+
+<p>The bot runs in the cloud on Modal (free tier). Every few minutes it:</p>
+<ol>
+  <li>Reads the latest signal from Prof Adam's Portfolio Signals channel via TRW's API</li>
+  <li>Parses the allocation percentages (e.g. 80% ETH, 14.3% HYPE, 5.7% PAXG)</li>
+  <li>Compares to your current Hyperliquid positions</li>
+  <li>Rebalances if the signal has changed — using 1x leverage perps</li>
+  <li>Sends you a Slack notification with execution details and price deviation from bar close</li>
+</ol>
+
+<div class="card">
+  <table>
+    <tr><th>Time (UK)</th><th>Polling frequency</th><th>Trading mode</th></tr>
+    <tr><td>00:00–00:30</td><td>Every 2 minutes</td><td><span class="badge badge-green">Auto-execute</span></td></tr>
+    <tr><td>00:30–05:00</td><td>Every 10 minutes</td><td><span class="badge badge-green">Auto-execute</span></td></tr>
+    <tr><td>05:00–00:00</td><td>Every hour</td><td><span class="badge badge-yellow">Approval required</span></td></tr>
+  </table>
+</div>
+
+<!-- WHAT YOU NEED -->
+<h2 id="what-you-need">What You Need</h2>
+
+<table>
+  <tr><th>Item</th><th>Cost</th><th>Notes</th></tr>
+  <tr><td><strong>TRW Subscription</strong></td><td>You already have this</td><td>Investing Masterclass campus</td></tr>
+  <tr><td><strong>Hyperliquid Account</strong></td><td>Free</td><td>With USDC deposited for trading</td></tr>
+  <tr><td><strong>Modal Account</strong></td><td>Free</td><td>Cloud hosting — runs the bot 24/7</td></tr>
+  <tr><td><strong>Slack Workspace</strong></td><td>Free</td><td>For notifications (optional but recommended)</td></tr>
+  <tr><td><strong>Python 3.12+</strong></td><td>Free</td><td>For initial setup only</td></tr>
+</table>
+
+<p><strong>Total monthly cost: $0</strong> beyond your existing TRW subscription and Hyperliquid trading fees (~0.04%).</p>
+
+<!-- STEP 1 -->
+<h2 id="step1">Step 1 — Get Your TRW Session Token</h2>
+
+<p>The bot needs to read messages from the signal channel. TRW uses a session token for authentication.</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h3>Open TRW in Chrome or Brave</h3>
+    <p>Navigate to Prof Adam's <strong>Portfolio Signals</strong> channel.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h3>Open DevTools</h3>
+    <p>Press <code>F12</code> to open DevTools. Click the <strong>Network</strong> tab, then click <strong>Fetch/XHR</strong>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h3>Reload and find the token</h3>
+    <p>Reload the page (<code>F5</code>). Click any request in the list. In the <strong>Headers</strong> tab, scroll to <strong>Request Headers</strong> and find <code>x-session-token</code>. Copy the entire value.</p>
+  </div>
+</div>
+
+<div class="warn">
+  <strong>⚠️ Never share your session token.</strong> Copy it directly into the manager GUI (<code>python manage.py</code>). Do not paste it into Discord, AI chats, or anywhere else. If anyone asks for your session token for any reason, they are trying to scam you.
+</div>
+
+<p>Session tokens appear to be long-lived (days to weeks). The bot will notify you on Slack if it expires.</p>
+
+<!-- STEP 2 -->
+<h2 id="step2">Step 2 — Set Up Hyperliquid API</h2>
+
+<p>The bot needs an API wallet to place trades on your behalf.</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h3>Go to Hyperliquid</h3>
+    <p>Open <a href="https://app.hyperliquid.xyz" target="_blank">app.hyperliquid.xyz</a>, connect your wallet, and make sure you have USDC deposited in your <strong>Perps</strong> wallet (not Spot — you can transfer in the Portfolio page).</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h3>Generate an API wallet</h3>
+    <p>Click <strong>More → API</strong> in the top menu. Give it a name (e.g. "signal-bot") — important because unnamed wallets overwrite each other. Click <strong>Generate</strong> then <strong>Authorize API Wallet</strong>. Set validity to <strong>180 days</strong> (maximum). Click Authorize and sign in MetaMask.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h3>Copy your keys</h3>
+    <p>You need two things:</p>
+    <ul>
+      <li><strong>Private Key</strong> — shown after generation (goes into <code>HYPERLIQUID_API_PRIVATE_KEY</code>)</li>
+      <li><strong>Master Account Address</strong> — your main wallet address shown in the top-right dropdown (goes into <code>HYPERLIQUID_MASTER_ACCOUNT_ADDRESS</code>)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="warn">
+  <strong>⚠️ The API wallet can place and cancel orders but cannot withdraw funds.</strong> Even in a worst-case scenario, your funds cannot be stolen via the API key — only bad positions could be opened, which you can close by revoking the key at app.hyperliquid.xyz.
+</div>
+
+<p>Set a calendar reminder to regenerate the key before the 180-day expiry.</p>
+
+<!-- STEP 3 -->
+<h2 id="step3">Step 3 — Set Up Modal</h2>
+
+<p>Modal runs your bot 24/7 in the cloud for free. No credit card required.</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h3>Create a Modal account</h3>
+    <p>Go to <a href="https://modal.com" target="_blank">modal.com</a> and sign up with Google or GitHub. No credit card needed.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h3>Install the Modal CLI</h3>
+    <pre><code>pip install modal</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h3>Authenticate Modal</h3>
+    <pre><code>modal token new</code></pre>
+    <p>A browser window opens — click Approve. You should see <code>Token verified successfully!</code></p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h3>Verify it works</h3>
+    <pre><code>modal profile current</code></pre>
+    <p>Should print your Modal workspace name.</p>
+  </div>
+</div>
+
+<!-- STEP 4 -->
+<h2 id="step4">Step 4 — Set Up Slack Notifications <span class="badge badge-blue">Optional</span></h2>
+
+<p>Slack notifications tell you when the bot detects a signal, what trades it made, fill prices vs bar close prices, and when approval is needed.</p>
+
+<ol>
+  <li>Go to <a href="https://api.slack.com/messaging/webhooks" target="_blank">api.slack.com/messaging/webhooks</a></li>
+  <li>Click <strong>Create your Slack app</strong> → From scratch</li>
+  <li>Name it "Signal Bot", pick your workspace</li>
+  <li>Go to <strong>Incoming Webhooks</strong> → toggle ON</li>
+  <li>Click <strong>Add New Webhook to Workspace</strong>, pick a channel</li>
+  <li>Copy the webhook URL</li>
+</ol>
+
+<p>If you skip this step the bot still runs — you'll just need to check the web dashboard manually.</p>
+
+<!-- STEP 5 -->
+<h2 id="step5">Step 5 — Install & Deploy</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h3>Install Python 3.12</h3>
+    <p>Download from <a href="https://python.org/downloads" target="_blank">python.org</a>. During installation check <strong>"Add python.exe to PATH"</strong>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h3>Download the bot code</h3>
+    <p>Option A — using git:</p>
+    <pre><code>git clone https://github.com/YOUR_REPO_URL.git
+cd trw</code></pre>
+    <p>Option B — download ZIP from GitHub (green Code button → Download ZIP), extract it, open a terminal in the folder.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h3>Install dependencies</h3>
+    <pre><code>pip install -r requirements.txt</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h3>Launch the setup manager</h3>
+    <pre><code>python manage.py</code></pre>
+    <p>A browser page opens. Fill in:</p>
+    <ul>
+      <li>Your TRW session token from Step 1</li>
+      <li>Your Hyperliquid API private key and master address from Step 2</li>
+      <li>Your Slack webhook URL from Step 4 (optional)</li>
+      <li>A username and password for your dashboard (recommended)</li>
+    </ul>
+    <p>Click <strong>Save & Deploy</strong>. The manager handles everything — saving tokens, creating Modal secrets, and deploying the bot.</p>
+  </div>
+</div>
+
+<div class="success">
+  ✓ After a successful deploy you'll see your dashboard URL. Bookmark it on your phone.
+</div>
+
+<!-- STEP 6 -->
+<h2 id="step6">Step 6 — Test Everything</h2>
+
+<p>Run these tests to confirm everything is wired up correctly before leaving it to run overnight.</p>
+
+<h3>Test 1 — Signal reader</h3>
+<pre><code>python trw_signal_reader.py</code></pre>
+<p>Should show the latest signal with allocations.</p>
+
+<h3>Test 2 — Hyperliquid connection</h3>
+<pre><code>python hyperliquid_rebalancer.py --status</code></pre>
+<p>Should show your account value and positions.</p>
+
+<h3>Test 3 — Preview trades (no execution)</h3>
+<pre><code>python hyperliquid_rebalancer.py --preview-live</code></pre>
+<p>Shows what trades WOULD be made without executing them.</p>
+
+<h3>Test 4 — Dashboard</h3>
+<p>Open your dashboard URL. Log in with your credentials. You should see your positions and the latest signal.</p>
+
+<h3>Test 5 — Slack</h3>
+<pre><code>python -c "
+import os, requests
+from dotenv import load_dotenv
+load_dotenv()
+r = requests.post(os.getenv('SLACK_WEBHOOK_URL'), json={'text': 'Signal bot test notification'})
+print(r.status_code, r.text)
+"</code></pre>
+<p>Should print <code>200 ok</code> and a message should appear in your Slack channel.</p>
+
+<!-- DASHBOARD -->
+<h2 id="dashboard">Using the Dashboard</h2>
+
+<p>Your dashboard URL format is:</p>
+<pre><code>https://YOUR_WORKSPACE--signal-bot-web.modal.run</code></pre>
+
+<p>The manager shows your exact URL after deploy. Bookmark it on your phone.</p>
+
+<h3>Features</h3>
+<ul>
+  <li><strong>Account value and PnL</strong> — live from Hyperliquid</li>
+  <li><strong>Positions</strong> — current perp positions with entry prices</li>
+  <li><strong>Latest signal</strong> — current allocations from Prof Adam</li>
+  <li><strong>Equity curve</strong> — your portfolio value over time. Toggle between Actual vs Bar Close to see execution alpha loss</li>
+  <li><strong>Approve / Dismiss</strong> — act on pending signals during daytime hours</li>
+  <li><strong>Force Rebalance</strong> — manually trigger a rebalance</li>
+  <li><strong>Health Check</strong> — verify TRW and Hyperliquid connections</li>
+  <li><strong>Export CSV</strong> — download equity history for analysis</li>
+</ul>
+
+<p>The dashboard auto-refreshes every 60 seconds while the tab is open, and pauses when you switch to another app to save compute.</p>
+
+<!-- MAINTENANCE -->
+<h2 id="maintenance">Maintenance</h2>
+
+<h3>TRW Token Expired</h3>
+<p>If the bot stops reading signals or you get a Slack auth error notification:</p>
+<ol>
+  <li>Open TRW in your browser, go to the signal channel</li>
+  <li><code>F12</code> → Network → Fetch/XHR → reload → grab new <code>x-session-token</code></li>
+  <li>Run <code>python manage.py</code> → paste the new token → Save & Deploy</li>
+</ol>
+
+<h3>Hyperliquid API Key Expired</h3>
+<p>Keys expire after the validity period you set (max 180 days).</p>
+<ol>
+  <li>Generate a new key at app.hyperliquid.xyz → More → API</li>
+  <li>Run <code>python manage.py</code> → paste the new key → Save & Deploy</li>
+</ol>
+
+<h3>Updating the Bot</h3>
+<p>If you download an updated version of the code:</p>
+<pre><code>python manage.py</code></pre>
+<p>Click Save & Deploy to redeploy with your existing credentials.</p>
+
+<h3>Stopping the Bot</h3>
+<pre><code>modal app stop signal-bot</code></pre>
+
+<h3>Restarting</h3>
+<pre><code>modal deploy modal_signal_bot.py</code></pre>
+
+<!-- SECURITY -->
+<h2 id="security">Security & Trust</h2>
+
+<p>You're about to enter API keys for your trading account into code. Here's what you should know.</p>
+
+<h3>The code only talks to 3 services — all yours</h3>
+<table>
+  <tr><th>Service</th><th>URL</th><th>Why</th></tr>
+  <tr><td><strong>TRW</strong></td><td>eden.therealworld.ag</td><td>Read signals from the chat</td></tr>
+  <tr><td><strong>Hyperliquid</strong></td><td>api.hyperliquid.xyz</td><td>Read positions and place trades</td></tr>
+  <tr><td><strong>Slack</strong></td><td>Your own webhook URL</td><td>Send YOU notifications</td></tr>
+</table>
+
+<p>No other HTTP calls exist. No data goes to the author or any third party. Zero analytics, zero telemetry.</p>
+
+<h3>Verify it yourself</h3>
+<p>Search each Python file for <code>requests.post</code> and <code>req.post</code>. Every network call goes to one of the 3 URLs above. Or paste any file into Claude or ChatGPT and ask: "Does this code send my credentials anywhere other than TRW, Hyperliquid, and my Slack webhook?"</p>
+
+<h3>What the API wallet can and can't do</h3>
+<table>
+  <tr><th>Action</th><th>Possible?</th></tr>
+  <tr><td>Place and cancel orders</td><td>✓ Yes</td></tr>
+  <tr><td>Withdraw funds</td><td>✗ No — impossible</td></tr>
+  <tr><td>Transfer between wallets</td><td>✗ No — impossible</td></tr>
+</table>
+
+<p>Even if your API key were compromised, your funds cannot be stolen. The worst case is someone opens bad positions — revoke the API wallet at app.hyperliquid.xyz to stop them instantly.</p>
+
+<h3>Where your secrets are stored</h3>
+<ul>
+  <li><strong>Local .env file</strong> — on your computer only, never committed to Git</li>
+  <li><strong>Modal encrypted secrets</strong> — encrypted at rest, only accessible during function execution in your own Modal account</li>
+</ul>
+
+<div class="warn">
+  <strong>Rules:</strong><br>
+  Never share your .env file<br>
+  Never paste tokens into AI chats, Discord, or any website<br>
+  Never commit .env to Git (the .gitignore prevents this)<br>
+  If you suspect a key is compromised, revoke the Hyperliquid API wallet immediately at app.hyperliquid.xyz
+</div>
+
+<!-- FAQ -->
+<h2 id="faq">FAQ</h2>
+
+<h3>Why perps instead of spot?</h3>
+<p>ETH, PAXG and XAUT don't have spot markets on Hyperliquid — they only exist as perps. Using 1x leverage perps gives identical economic exposure to holding spot. All positions use 1x cross leverage with no amplified risk.</p>
+
+<h3>What if the signal says "No change"?</h3>
+<p>The bot detects this and does nothing. It sends a Slack notification confirming "No change" so you know it's working.</p>
+
+<h3>What if the PAXG trade fails with a minimum order error?</h3>
+<p>Hyperliquid has a minimum order size of ~$10 for PAXG. At small account sizes (under ~$200) the 5.7% PAXG allocation falls below this. ETH and HYPE will still execute correctly. This resolves automatically as your account grows.</p>
+
+<h3>What if my internet goes down?</h3>
+<p>The bot runs in Modal's cloud, not on your computer. Your internet doesn't matter once deployed.</p>
+
+<h3>Can I stop the bot temporarily?</h3>
+<pre><code>modal app stop signal-bot</code></pre>
+<p>Restart with <code>modal deploy modal_signal_bot.py</code></p>
+
+<h3>How long does the TRW session token last?</h3>
+<p>Session tokens appear to last days to weeks. The bot sends a Slack alert when the token expires. Refreshing takes about 2 minutes.</p>
+
+<h3>What is the bar close equity toggle on the chart?</h3>
+<p>This shows what your portfolio value would be if every trade had executed at the exact bar close price (00:00 UTC). The gap between "Actual" and "Bar close" is your execution alpha loss — how much you paid in slippage and price movement in the minutes between signal detection and fill.</p>
+
+<h3>How do I export my equity history for analysis?</h3>
+<p>Click the <strong>Export CSV</strong> button on the dashboard. Downloads a CSV with columns <code>date</code>, <code>actual_equity_usd</code>, and <code>barclose_equity_usd</code>.</p>
+
+<h3>Is this financial advice?</h3>
+<p>No. This is a tool to automate a strategy you've chosen to follow. Always understand the signals before automating them. Use at your own risk.</p>
+
+</div>
+</body>
+</html>
