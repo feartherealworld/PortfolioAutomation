@@ -90,7 +90,7 @@
   <li>Reads the latest signal from Prof Adam's Portfolio Signals channel via TRW's API</li>
   <li>Parses the allocation percentages (e.g. 80% ETH, 14.3% HYPE, 5.7% PAXG)</li>
   <li>Compares to your current Hyperliquid positions</li>
-  <li>Rebalances if the signal has changed — using 1x leverage perps</li>
+  <li>Rebalances if the signal has changed — buying spot assets where available, using 1x perps as fallback</li>
   <li>Sends you a Slack notification with execution details and price deviation from bar close</li>
 </ol>
 
@@ -108,8 +108,8 @@
 
 <table>
   <tr><th>Item</th><th>Cost</th><th>Notes</th></tr>
-  <tr><td><strong>TRW Subscription</strong></td><td>You already have this</td><td>Investing Masterclass campus</td></tr>
-  <tr><td><strong>Hyperliquid Account</strong></td><td>Free</td><td>With USDC deposited for trading</td></tr>
+  <tr><td><strong>TRW Subscription</strong></td><td>You already have this</td><td>Investing campus</td></tr>
+  <tr><td><strong>Hyperliquid Account</strong></td><td>Free</td><td>With USDC deposited in your spot wallet for trading</td></tr>
   <tr><td><strong>Modal Account</strong></td><td>Free</td><td>Cloud hosting — runs the bot 24/7</td></tr>
   <tr><td><strong>Slack Workspace</strong></td><td>Free</td><td>For notifications (optional but recommended)</td></tr>
   <tr><td><strong>Python 3.12+</strong></td><td>Free</td><td>For initial setup only</td></tr>
@@ -155,21 +155,22 @@
 <!-- STEP 2 -->
 <h2 id="step2">Step 2 — Set Up Hyperliquid API</h2>
 
-<p>The bot needs an API wallet to place trades on your behalf.</p>
+<p>The bot needs an API wallet to place trades on your behalf. It uses Hyperliquid's <strong>unified account</strong> mode, which lets spot holdings and perp margin share one collateral pool — so you can hold actual spot ETH, BTC, HYPE etc. while still being able to trade perps for assets like PAXG that have no spot market.</p>
 
 <div class="step">
   <div class="step-num">1</div>
   <div class="step-body">
     <h3>Go to Hyperliquid</h3>
-    <p>Open <a href="https://app.hyperliquid.xyz" target="_blank">app.hyperliquid.xyz</a>, connect your wallet, and make sure you have USDC deposited in your <strong>Perps</strong> wallet (not Spot — you can transfer in the Portfolio page).</p>
+    <p>Open <a href="https://app.hyperliquid.xyz" target="_blank">app.hyperliquid.xyz</a> and connect your wallet. Make sure you have USDC in your <strong>Spot</strong> wallet — this is where the bot will trade from. You can deposit directly to Spot, or transfer from Perps in the Portfolio page.</p>
   </div>
 </div>
 
 <div class="step">
   <div class="step-num">2</div>
   <div class="step-body">
-    <h3>Generate an API wallet</h3>
+    <h3>Generate an API wallet as an agent</h3>
     <p>Click <strong>More → API</strong> in the top menu. Give it a name (e.g. "signal-bot") — important because unnamed wallets overwrite each other. Click <strong>Generate</strong> then <strong>Authorize API Wallet</strong>. Set validity to <strong>180 days</strong> (maximum). Click Authorize and sign in MetaMask.</p>
+    <p style="margin-top:8px">The API wallet must be authorised as an <strong>agent</strong> — this is the default when you use the named wallet flow above. Agent authorisation is required for the bot to activate unified account mode on your behalf.</p>
   </div>
 </div>
 
@@ -183,6 +184,11 @@
       <li><strong>Master Account Address</strong> — your main wallet address shown in the top-right dropdown (goes into <code>HYPERLIQUID_MASTER_ACCOUNT_ADDRESS</code>)</li>
     </ul>
   </div>
+</div>
+
+<div class="info">
+  <strong>What is unified account mode?</strong><br>
+  By default, Hyperliquid keeps your spot wallet and perp wallet separate. Unified account mode merges them so your USDC (and any spot tokens you hold) back both spot trades and perp margin. The bot activates this automatically on first run — you don't need to do anything manually.
 </div>
 
 <div class="warn">
@@ -307,7 +313,7 @@ cd trw</code></pre>
 
 <h3>Test 2 — Hyperliquid connection</h3>
 <pre><code>python hyperliquid_rebalancer.py --status</code></pre>
-<p>Should show your account value and positions.</p>
+<p>Should show your total account value (spot + perp) and current holdings, each labelled SPOT or PERP.</p>
 
 <h3>Test 3 — Preview trades (no execution)</h3>
 <pre><code>python hyperliquid_rebalancer.py --preview-live</code></pre>
@@ -317,14 +323,8 @@ cd trw</code></pre>
 <p>Open your dashboard URL. Log in with your credentials. You should see your positions and the latest signal.</p>
 
 <h3>Test 5 — Slack</h3>
-<pre><code>python -c "
-import os, requests
-from dotenv import load_dotenv
-load_dotenv()
-r = requests.post(os.getenv('SLACK_WEBHOOK_URL'), json={'text': 'Signal bot test notification'})
-print(r.status_code, r.text)
-"</code></pre>
-<p>Should print <code>200 ok</code> and a message should appear in your Slack channel.</p>
+<pre><code>python test_slack.py</code></pre>
+<p>Fires all notification types to your Slack channel so you can see exactly how they look. Should print <code>✓</code> for each one. Pass <code>--only rebalance</code> to test a single type.</p>
 
 <!-- DASHBOARD -->
 <h2 id="dashboard">Using the Dashboard</h2>
@@ -336,9 +336,10 @@ print(r.status_code, r.text)
 
 <h3>Features</h3>
 <ul>
-  <li><strong>Account value and PnL</strong> — live from Hyperliquid</li>
-  <li><strong>Positions</strong> — current perp positions with entry prices</li>
+  <li><strong>Account value and PnL</strong> — total across both your spot wallet and perp margin, live from Hyperliquid</li>
+  <li><strong>Positions</strong> — current spot holdings and perp positions with entry prices. Each shows a <strong>SPOT</strong> or <strong>PERP</strong> badge so you can see exactly how each asset is held</li>
   <li><strong>Latest signal</strong> — current allocations from Prof Adam</li>
+  <li><strong>All-time PnL</strong> — total gain/loss since the bot first started tracking, shown as a dollar amount and percentage</li>
   <li><strong>Equity curve</strong> — your portfolio value over time. Toggle between Actual vs Bar Close to see execution alpha loss</li>
   <li><strong>Approve / Dismiss</strong> — act on pending signals during daytime hours</li>
   <li><strong>Force Rebalance</strong> — manually trigger a rebalance</li>
@@ -399,6 +400,7 @@ print(r.status_code, r.text)
 <table>
   <tr><th>Action</th><th>Possible?</th></tr>
   <tr><td>Place and cancel orders</td><td>✓ Yes</td></tr>
+  <tr><td>Activate unified account mode</td><td>✓ Yes (agent permission — required for spot trading)</td></tr>
   <tr><td>Withdraw funds</td><td>✗ No — impossible</td></tr>
   <tr><td>Transfer between wallets</td><td>✗ No — impossible</td></tr>
 </table>
@@ -422,14 +424,15 @@ print(r.status_code, r.text)
 <!-- FAQ -->
 <h2 id="faq">FAQ</h2>
 
-<h3>Why perps instead of spot?</h3>
-<p>ETH, PAXG and XAUT don't have spot markets on Hyperliquid — they only exist as perps. Using 1x leverage perps gives identical economic exposure to holding spot. All positions use 1x cross leverage with no amplified risk.</p>
+<h3>Why spot instead of perps?</h3>
+<p>The RSPS strategy is designed to hold actual assets — spot ETH, spot BTC, spot HYPE — rather than derivatives. The bot trades spot by default for all assets that have a liquid spot market on Hyperliquid: ETH, BTC, HYPE, SOL, DOGE, and XRP. For assets with no spot market (PAXG/gold), it falls back to a 1x leverage perp, which gives equivalent economic exposure with no amplified risk.</p>
+<p>All of this works through Hyperliquid's unified account mode, which lets spot holdings and perp margin share one collateral pool. You deposit USDC once and the bot allocates it across spot and perps automatically.</p>
 
 <h3>What if the signal says "No change"?</h3>
 <p>The bot detects this and does nothing. It sends a Slack notification confirming "No change" so you know it's working.</p>
 
 <h3>What if the PAXG trade fails with a minimum order error?</h3>
-<p>Hyperliquid has a minimum order size of ~$10 for PAXG. At small account sizes (under ~$200) the 5.7% PAXG allocation falls below this. ETH and HYPE will still execute correctly. This resolves automatically as your account grows.</p>
+<p>Hyperliquid has a minimum order size of $10 across all markets (spot and perp). At small account sizes the PAXG perp allocation may fall below this threshold — ETH, BTC, HYPE and other spot assets will still execute correctly. This resolves automatically as your account grows.</p>
 
 <h3>What if my internet goes down?</h3>
 <p>The bot runs in Modal's cloud, not on your computer. Your internet doesn't matter once deployed.</p>
