@@ -384,9 +384,11 @@ def compute_rebalance(allocations, account_value, current_positions,
             trade_ticker = (spot_index.get(canon, f"{canon}/USDC")
                             if mode == "spot" else canon)
 
-        delta_size = target_size - current_size
-        delta_usd  = abs(delta_size) * price
-        if delta_usd < MIN_TRADE_USD:
+        delta_size  = target_size - current_size
+        delta_usd   = abs(delta_size) * price
+        is_full_exit = target_size == 0.0 and current_size != 0
+        # Always close positions with zero target — skip MIN_TRADE_USD for dust sweeps
+        if not is_full_exit and delta_usd < MIN_TRADE_USD:
             continue
         if delta_usd > MAX_SINGLE_ORDER_USD:
             delta_size = (MAX_SINGLE_ORDER_USD / price) * (1 if delta_size > 0 else -1)
@@ -400,6 +402,7 @@ def compute_rebalance(allocations, account_value, current_positions,
             "value_usd":   delta_usd,
             "price":       price,
             "mode":        mode,
+            "target_size": target_size,
         })
 
     trades.sort(key=lambda t: (0 if t["side"] == "sell" else 1, -t["value_usd"]))
@@ -444,10 +447,16 @@ def execute_trades(info, exchange, trades: list[dict]) -> list[dict]:
                              "reason": "leverage set failed"})
             continue
 
-        sz_dec = spot_sz_map.get(ticker) or perp_sz_map.get(ticker) or 2
-        size   = float(
+        sz_dec   = spot_sz_map.get(ticker) or perp_sz_map.get(ticker) or 2
+        # For full exits (target=0), round UP so no dust remainder is left behind
+        if trade["side"] == "sell" and trade.get("target_size", -1) == 0:
+            from decimal import ROUND_UP
+            rounding = ROUND_UP
+        else:
+            rounding = ROUND_DOWN
+        size = float(
             Decimal(str(trade["size"]))
-            .quantize(Decimal(10) ** -sz_dec, rounding=ROUND_DOWN)
+            .quantize(Decimal(10) ** -sz_dec, rounding=rounding)
         )
         if size == 0:
             results.append({**trade, "status": "skipped",
@@ -998,6 +1007,12 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
   .btn-export{background:var(--blue-dim);border-color:rgba(91,156,246,.35);color:var(--blue)}
   .footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);flex-wrap:wrap;gap:6px}
   .no-pos{padding:20px 14px;color:var(--muted);font-size:12px;text-align:center}
+  .toggle-pill{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-family:var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);cursor:pointer;padding:3px 8px 3px 6px;border:1px solid var(--border);border-radius:20px;background:none;transition:all .15s;user-select:none}
+  .toggle-pill:hover{border-color:var(--border2);color:var(--text)}
+  .toggle-pill.active{background:var(--accent-dim);border-color:rgba(200,245,99,.35);color:var(--accent)}
+  .toggle-pill .pip{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5;transition:opacity .15s}
+  .toggle-pill.active .pip{opacity:1}
+  .dust-count{font-size:10px;color:var(--muted);margin-left:2px}
   @media(max-width:600px){
     .header{padding:12px 14px}
     .main{padding:12px 14px}
@@ -1064,7 +1079,7 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
   </div>
   <div class="grid-2">
     <div class="panel">
-      <div class="panel-header"><div class="panel-title">Positions</div></div>
+      <div class="panel-header"><div class="panel-title">Positions</div><button class="toggle-pill active" id="dustToggle" onclick="toggleDust(this)"><span class="pip"></span>Show dust<span class="dust-count" id="dustCount"></span></button></div>
       <div id="positionsBody"><div class="no-pos">Loading...</div></div>
     </div>
     <div class="panel">
@@ -1113,6 +1128,26 @@ function buildChart(){
 function setRange(r,el){range=r;document.querySelectorAll('#rangeTabs .ctrl-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');if(chart){chart.destroy();chart=null}buildChart()}
 function setSeries(s,el){series=s;document.querySelectorAll('#seriesTabs .ctrl-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');if(chart){chart.destroy();chart=null}buildChart()}
 function exportCSV(){const a=loadH(SK);const b=loadH(BC);if(!a.length&&!b.length){alert('No equity history to export yet.');return}const dates=[...new Set([...a.map(p=>p.date),...b.map(p=>p.date)])].sort();const am=Object.fromEntries(a.map(p=>[p.date,p.value]));const bm=Object.fromEntries(b.map(p=>[p.date,p.value]));const rows=[['date','actual_equity_usd','barclose_equity_usd']];for(const d of dates)rows.push([d,am[d]??'',bm[d]??'']);const csv=rows.map(r=>r.join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a2=document.createElement('a');a2.href=url;a2.download='equity_'+new Date().toISOString().slice(0,10)+'.csv';a2.click();URL.revokeObjectURL(url)}
+const DUST_USD=0.5;
+let _hideDust=true;
+let _positions=[];
+function renderPositions(){
+  const pb=document.getElementById('positionsBody');
+  const dustPos=_positions.filter(p=>p.value<DUST_USD);
+  const visPos=_hideDust?_positions.filter(p=>p.value>=DUST_USD):_positions;
+  const dc2=document.getElementById('dustCount');
+  if(dc2)dc2.textContent=dustPos.length>0?` (${dustPos.length})`:'';
+  document.getElementById('posCount').textContent=visPos.length+(_hideDust&&dustPos.length>0?` +${dustPos.length} dust`:'');
+  const dc=['#c8f563','#5b9cf6','#f5a623','#ff5c5c','#c084fc'];
+  if(!visPos.length){pb.innerHTML=`<div class="no-pos">${_positions.length?'No significant positions — off risk':'No open positions'}</div>`;return;}
+  pb.innerHTML=`<table class="pos-table"><thead><tr><th>Asset</th><th class="hide-mobile">Mode</th><th class="hide-mobile">Size</th><th class="hide-mobile">Entry</th><th>Value</th><th>PnL</th></tr></thead><tbody>${visPos.map((p,i)=>{const modeTag=p.mode==='spot'?'<span class="mode-spot">SPOT</span>':'<span class="mode-perp">PERP</span>';return`<tr><td><span class="coin-badge"><span class="coin-dot" style="background:${dc[i%dc.length]}"></span>${p.coin}</span></td><td class="hide-mobile">${modeTag}</td><td class="hide-mobile">${parseFloat(p.size).toFixed(4)}</td><td class="hide-mobile">${fmt$(p.entryPx)}</td><td style="color:${p.value<DUST_USD?'var(--muted)':'inherit'}">${fmt$(p.value)}</td><td class="${p.pnl>=0?'pos':'neg'}">${p.pnl>=0?'+':''}${fmt$(p.pnl)}</td></tr>`}).join('')}</tbody></table>`;
+}
+function toggleDust(btn){
+  _hideDust=!_hideDust;
+  btn.classList.toggle('active',_hideDust);
+  btn.childNodes[1].textContent=_hideDust?'Show dust':'Hide dust';
+  renderPositions();
+}
 function init(d){
   const{account,positions,signal,pending,lastActedId,trwOk,hlOk,isAuto,approvalToken,barCloseEquity}=d;
   document.getElementById('badges').innerHTML=`<span class="badge ${trwOk?'badge-ok':'badge-err'}">TRW ${trwOk?'OK':'ERR'}</span><span class="badge ${hlOk?'badge-ok':'badge-err'}">HL ${hlOk?'OK':'ERR'}</span><span class="badge ${isAuto?'badge-auto':'badge-manual'}" title="${isAuto?'Autonomous 00:00–05:00 UK':'Approval required 05:00–00:00 UK'}">${isAuto?'Auto 00–05':'Approval'}</span>`;
@@ -1120,7 +1155,7 @@ function init(d){
   document.getElementById('accountValue').textContent=fmt$(account.value);
   document.getElementById('totalPnl').textContent=(tp>=0?'+':'')+fmt$(tp);
   document.getElementById('totalPnl').className='metric-value '+(tp>=0?'pos':'neg');
-  document.getElementById('posCount').textContent=positions.length;
+
   // All-time PnL: difference between current equity and first recorded equity point
   const _allH=loadH(SK);
   const _atEl=document.getElementById('allTimePnl');
@@ -1138,10 +1173,8 @@ function init(d){
   fullB=loadH(BC);
   if(barCloseEquity&&barCloseEquity>0)fullB=recordPt(BC,barCloseEquity);
   buildChart();
-  const dc=['#c8f563','#5b9cf6','#f5a623','#ff5c5c','#c084fc'];
-  const pb=document.getElementById('positionsBody');
-  if(!positions.length){pb.innerHTML='<div class="no-pos">No open positions</div>'}
-  else{pb.innerHTML=`<table class="pos-table"><thead><tr><th>Asset</th><th class="hide-mobile">Mode</th><th class="hide-mobile">Size</th><th class="hide-mobile">Entry</th><th>Value</th><th>PnL</th></tr></thead><tbody>${positions.map((p,i)=>{const modeTag=p.mode==='spot'?'<span class="mode-spot">SPOT</span>':'<span class="mode-perp">PERP</span>';return`<tr><td><span class="coin-badge"><span class="coin-dot" style="background:${dc[i%dc.length]}"></span>${p.coin}</span></td><td class="hide-mobile">${modeTag}</td><td class="hide-mobile">${parseFloat(p.size).toFixed(4)}</td><td class="hide-mobile">${fmt$(p.entryPx)}</td><td>${fmt$(p.value)}</td><td class="${p.pnl>=0?'pos':'neg'}">${p.pnl>=0?'+':''}${fmt$(p.pnl)}</td></tr>`}).join('')}</tbody></table>`}
+  _positions=positions;
+  renderPositions();
   const al=document.getElementById('allocList');const st=document.getElementById('signalTime');
   if(signal&&signal.allocations&&signal.allocations.length){st.textContent=signal.time||'';al.innerHTML=signal.allocations.map(a=>`<div class="alloc-row"><div class="alloc-pct">${a.percent}%</div><div class="alloc-bar-wrap"><div class="alloc-bar" style="width:${a.percent}%"></div></div><div class="alloc-asset">${a.asset}</div><div class="alloc-type">${a.type}</div></div>`).join('')}
   else{al.innerHTML='<div class="no-pos">No signal found</div>'}
