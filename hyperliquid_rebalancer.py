@@ -134,12 +134,27 @@ def build_spot_index(info: Info) -> dict[str, str]:
 
 
 def get_spot_sz_decimals(info: Info) -> dict[str, int]:
-    """Return pair_name → szDecimals for all spot pairs."""
+    """
+    Return szDecimals for all spot pairs, indexed three ways so lookups
+    always succeed regardless of whether the caller uses the pair name
+    ("ETH/USDC"), the raw token name ("UETH"), or the canonical ticker ("ETH").
+    """
     result: dict[str, int] = {}
     try:
-        meta = info.spot_meta()
+        meta        = info.spot_meta()
+        tokens      = meta.get("tokens", [])
+        idx_to_name = {i: t.get("name", "") for i, t in enumerate(tokens)}
         for pair in meta.get("universe", []):
-            result[pair["name"]] = pair.get("szDecimals", 2)
+            sd        = pair.get("szDecimals", 4)
+            pair_name = pair.get("name", "")
+            t         = pair.get("tokens", [])
+            if pair_name:
+                result[pair_name] = sd                       # "ETH/USDC" → 4
+            if len(t) >= 1:
+                raw = idx_to_name.get(t[0], "")
+                if raw:
+                    result[raw.upper()]             = sd     # "UETH" → 4
+                    result[raw.lstrip("U").upper()] = sd     # "ETH"  → 4
     except Exception:
         pass
     return result
@@ -355,7 +370,14 @@ def execute_trades(info: Info, exchange: Exchange,
                              "reason": "leverage set failed"})
             continue
 
-        sz_dec = (spot_sz_map.get(ticker) or perp_meta.get(ticker) or 2)
+        # Try pair name ("ETH/USDC"), then canonical asset ("ETH"), then perp ticker, then 4
+        asset  = trade.get("asset", ticker)
+        sz_dec = (spot_sz_map.get(ticker)
+                  or spot_sz_map.get(asset)
+                  or spot_sz_map.get(ASSET_TO_TICKER.get(asset, asset))
+                  or perp_meta.get(ticker)
+                  or perp_meta.get(asset)
+                  or 4)   # default 4 — HL spot assets are 4 dp, not 2
         size   = float(
             Decimal(str(trade["size"]))
             .quantize(Decimal(10) ** -sz_dec, rounding=ROUND_DOWN)
