@@ -213,67 +213,113 @@ def ensure_unified_account(exchange, info) -> None:
 
 
 def build_spot_index(info) -> dict[str, str]:
-    """Return canonical ticker → spot pair name e.g. "ETH" → "ETH/USDC"."""
+    """
+    Return canonical ticker → HL spot asset identifier for use in orders.
+
+    HL API rules (from docs):
+      - PURR/USDC  → use the pair name "PURR/USDC"  (isCanonical=true, index=0)
+      - All others → use "@{universe_index}"  e.g. HYPE → "@107"
+    The pair-name format ("HYPE/USDC") is NOT accepted by the exchange endpoint
+    for non-canonical pairs — it will return "Invalid size" or asset-not-found errors.
+    """
     mapping: dict[str, str] = {}
     try:
         meta        = info.spot_meta()
         tokens      = meta.get("tokens", [])
-        idx_to_name = {i: t.get("name", "") for i, t in enumerate(tokens)}
+        # token index → canonical uppercase name (strip leading U for bridged tokens)
+        idx_to_name: dict[int, str] = {}
+        for i, t in enumerate(tokens):
+            raw = t.get("name", "")
+            if raw:
+                idx_to_name[i] = raw.upper()
+
         for pair in meta.get("universe", []):
-            t = pair.get("tokens", [])
-            if len(t) == 2 and t[1] == 0:
-                raw_name  = idx_to_name.get(t[0], "")
-                pair_name = pair.get("name", "")
-                if raw_name and pair_name:
-                    clean = raw_name.lstrip("U").upper()
-                    mapping[clean]             = pair_name
-                    mapping[raw_name.upper()]  = pair_name
+            t          = pair.get("tokens", [])
+            pair_index = pair.get("index", None)   # universe index → "@{index}"
+            pair_name  = pair.get("name", "")       # e.g. "PURR/USDC" or "@1"
+            is_canonical = pair.get("isCanonical", False)
+
+            if len(t) != 2 or t[1] != 0:   # quote must be USDC (token 0)
+                continue
+            if pair_index is None:
+                continue
+
+            raw_name = idx_to_name.get(t[0], "")
+            if not raw_name:
+                continue
+
+            # Canonical name used by the rest of our code (strip U-prefix)
+            clean = raw_name.lstrip("U") if raw_name.startswith("U") and len(raw_name) > 1 else raw_name
+
+            # Trade identifier: PURR/USDC by pair name, everything else by @index
+            if is_canonical and pair_name and not pair_name.startswith("@"):
+                trade_id = pair_name          # "PURR/USDC"
+            else:
+                trade_id = f"@{pair_index}"   # "@107" for HYPE, "@0" for BTC/USDC etc.
+
+            # Map both the clean name and the raw name so lookups always hit
+            mapping[clean]             = trade_id
+            mapping[raw_name]          = trade_id
+            if pair_name and not pair_name.startswith("@"):
+                mapping[pair_name]     = trade_id  # also accept "HYPE/USDC" as input key
+
     except Exception as e:
         print(f"build_spot_index failed: {e}")
     return mapping
 
 
-def get_bar_close_prices(assets: list[str]) -> dict[str, float]:
+def get_daily_open_prices(assets: list[str], signal_ts_ms: int) -> dict[str, float]:
     """
-    Fetch the most recently *closed* candle price for each asset.
-    Uses 5-minute candles on Hyperliquid for maximum resolution —
-    the previous closed 5m bar is the best proxy for "signal bar close".
-    Falls back to the last closed 1h bar if 5m data is unavailable.
+    Fetch the UTC 00:00 price for each asset on the day the signal was released.
+
+    "Bar close" is defined as: the open price of the daily candle on the signal date,
+    which equals the price at exactly midnight UTC (00:00) of that day.
+    This represents "what would the portfolio be worth if rebalanced at the daily
+    open instead of at the intraday signal price?"
+
+    Example: signal released Tuesday 14:30 UTC → we fetch the Tuesday 1d candle
+    open price = Tuesday 00:00 UTC price.
+
+    Falls back to the 00:00 1h candle open if 1d data is unavailable.
     """
     import requests as req
+    from datetime import datetime, timezone
+
     prices: dict[str, float] = {}
-    now_ms = int(time.time() * 1000)
+    signal_dt   = datetime.fromtimestamp(signal_ts_ms / 1000, tz=timezone.utc)
+    midnight_dt = signal_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    midnight_ms = int(midnight_dt.timestamp() * 1000)
+
     for asset in assets:
         ticker = ASSET_TO_TICKER.get(asset, asset)
         if ticker == "USDC":
             continue
-        # Try 5m first (last 30 minutes covers at least 5 closed bars)
         fetched = False
-        for interval, lookback_s in [("5m", 1800), ("15m", 3600), ("1h", 7200)]:
+        for interval, window_ms in [("1d", 86_400_000), ("1h", 3_600_000)]:
             try:
                 resp = req.post(
                     "https://api.hyperliquid.xyz/info",
                     json={"type": "candleSnapshot", "req": {
-                        "coin": ticker, "interval": interval,
-                        "startTime": now_ms - lookback_s * 1000,
-                        "endTime":   now_ms,
+                        "coin":      ticker,
+                        "interval":  interval,
+                        "startTime": midnight_ms,
+                        "endTime":   midnight_ms + window_ms,
                     }},
                     timeout=10,
                 )
                 candles = resp.json()
-                # Use second-to-last candle — the last one may still be open
-                if candles and len(candles) >= 2:
-                    prices[asset] = float(candles[-2]["c"])
-                    fetched = True
-                    break
-                elif candles:
-                    prices[asset] = float(candles[-1]["c"])
-                    fetched = True
-                    break
+                if not isinstance(candles, list) or not candles:
+                    continue
+                # Open of first candle = price at midnight UTC of the signal date
+                prices[asset] = float(candles[0]["o"])
+                print(f"[bar_close] {asset} 00:00 UTC {midnight_dt.date()}: "
+                      f"${prices[asset]:.4f}  (signal at {signal_dt.strftime('%H:%M UTC')})")
+                fetched = True
+                break
             except Exception as e:
-                print(f"Bar close ({interval}) failed for {asset}: {e}")
+                print(f"[bar_close] {interval} failed for {asset}: {e}")
         if not fetched:
-            print(f"Warning: could not get bar close price for {asset}")
+            print(f"[bar_close] WARNING: no 00:00 price for {asset} on {midnight_dt.date()}")
     return prices
 
 
@@ -420,13 +466,14 @@ def compute_rebalance(allocations, account_value, current_positions,
             mode         = target["mode"]
             trade_ticker = target["ticker"]
         else:
-            price = cur_pos.get("entry_px", 0)
+            price = cur_pos.get("mark_px", cur_pos.get("entry_px", 0))
             if not price:
                 continue
             target_size  = 0.0
             asset        = canon
             mode         = cur_pos.get("mode", "perp")
-            trade_ticker = (spot_index.get(canon, f"{canon}/USDC")
+            # For spot exits: look up @index from spot_index; never construct "COIN/USDC" manually
+            trade_ticker = (spot_index.get(canon, spot_index.get(f"U{canon}", canon))
                             if mode == "spot" else canon)
 
         delta_size  = target_size - current_size
@@ -457,32 +504,32 @@ def compute_rebalance(allocations, account_value, current_positions,
 def execute_trades(info, exchange, trades: list[dict]) -> list[dict]:
     results: list[dict] = []
 
-    # Build size-decimals lookup keyed THREE ways so we always hit:
-    #   1. by pair name   ("ETH/USDC" → 4)   for spot trades
-    #   2. by base ticker ("ETH"      → 4)   canonical fallback for spot
-    #   3. by perp ticker ("ETH"      → 3)   for perp trades
-    sz_dec_map: dict[str, int] = {}
+    # Build size-decimals maps.
+    # Spot: keyed by "@{universe_index}" — must match what build_spot_index returns.
+    #       szDecimals comes from tokens[], NOT universe[] (universe entries don't carry it).
+    # Perp: keyed by asset name e.g. "ETH", "HYPE".
+    spot_sz_map:  dict[str, int] = {}
+    perp_sz_map:  dict[str, int] = {}
     try:
-        meta   = info.spot_meta()
-        tokens = meta.get("tokens", [])
-        idx_to_name = {i: t.get("name", "") for i, t in enumerate(tokens)}
-        for pair in meta.get("universe", []):
-            sd        = pair.get("szDecimals", 4)
-            pair_name = pair.get("name", "")
-            t         = pair.get("tokens", [])
-            if pair_name:
-                sz_dec_map[pair_name] = sd          # "ETH/USDC" → 4
-            if len(t) >= 1:
-                raw  = idx_to_name.get(t[0], "")
-                if raw:
-                    sz_dec_map[raw.upper()]              = sd   # "UETH" → 4
-                    sz_dec_map[raw.lstrip("U").upper()]  = sd   # "ETH"  → 4
+        spot_meta = info.spot_meta()
+        tokens    = spot_meta.get("tokens", [])
+        # token_index → szDecimals
+        tok_sz: dict[int, int] = {i: int(t.get("szDecimals", 2)) for i, t in enumerate(tokens)}
+        for pair in spot_meta.get("universe", []):
+            pair_idx = pair.get("index")
+            toks     = pair.get("tokens", [])
+            if pair_idx is not None and len(toks) == 2 and toks[1] == 0:
+                sz = tok_sz.get(toks[0], 2)
+                spot_sz_map[f"@{pair_idx}"] = sz
+                # Also key by pair name for PURR/USDC which uses name format
+                pname = pair.get("name", "")
+                if pname and not pname.startswith("@"):
+                    spot_sz_map[pname] = sz
     except Exception as e:
-        print(f"spot sz_dec build failed: {e}")
+        print(f"spot_sz_map build failed: {e}")
     try:
         for a in info.meta()["universe"]:
-            # Perp entries only overwrite if not already set by spot
-            sz_dec_map.setdefault(a["name"], a["szDecimals"])
+            perp_sz_map[a["name"]] = int(a["szDecimals"])
     except Exception:
         pass
 
@@ -501,19 +548,16 @@ def execute_trades(info, exchange, trades: list[dict]) -> list[dict]:
         ticker = trade["ticker"]
         mode   = trade["mode"]
         is_buy = trade["side"] == "buy"
-        asset  = trade.get("asset", ticker)   # canonical asset name e.g. "ETH"
 
         if mode == "perp" and ticker in leverage_failed:
             results.append({**trade, "status": "skipped",
                              "reason": "leverage set failed"})
             continue
 
-        # Look up precision: try pair name first, then canonical ticker, then default 4
-        # Default is 4 (not 2) — HL spot assets are typically 4 decimal places
-        sz_dec = (sz_dec_map.get(ticker)
-                  or sz_dec_map.get(asset)
-                  or sz_dec_map.get(ASSET_TO_TICKER.get(asset, asset))
-                  or 4)
+        sz_dec = spot_sz_map.get(ticker) if mode == "spot" else perp_sz_map.get(ticker)
+        if sz_dec is None:
+            sz_dec = 2
+            print(f"[execute] WARNING: no szDecimals for {ticker} ({mode}), defaulting to 2")
         # For full exits (target=0), round UP so no dust remainder is left behind
         if trade["side"] == "sell" and trade.get("target_size", -1) == 0:
             from decimal import ROUND_UP
@@ -674,7 +718,7 @@ def do_rebalance(parsed: dict, msg_id: str) -> dict:
                 total_slippage_usd += slip_usd
                 dev_sign = "+" if dev >= 0 else ""
                 slip_str = f"${slip_usd:.2f}" if side == "BUY" else f"-${slip_usd:.2f}"
-                line += f"\n   bar ${bar_px:,.2f}  ·  dev {dev_sign}{dev:.3f}%  ·  slip {slip_str}"
+                line += f"\n   00:00 open ${bar_px:,.2f}  ·  dev {dev_sign}{dev:.3f}%  ·  Δ {slip_str}"
             trade_lines.append(line)
         elif r["status"] == "skipped":
             trade_lines.append(f"— SKIP {ticker}: {r.get('reason', '?')}")
@@ -698,6 +742,53 @@ def do_rebalance(parsed: dict, msg_id: str) -> dict:
 
     send_slack("\n".join(lines), mention=bool(failed))
     signal_state["last_signal_id"] = msg_id
+
+    # ── Store bar-close equity snapshot at execution time ─────────────────────
+    # Bar-close equity = what the account would be worth if every filled trade
+    # had been executed at the 00:00 UTC daily open instead of the intraday price.
+    # Computed as: actual post-trade equity ± Σ(daily_open - exec_price) * fill_size
+    # Stored once per rebalance so the dashboard never needs to recompute it.
+    try:
+        post_state    = get_account_state(info)
+        actual_equity = post_state["account_value"]
+        record_equity_snapshot(actual_equity)
+
+        bc_adjustment = 0.0
+        bc_has_prices = False
+        for r in results:
+            if r["status"] != "filled":
+                continue
+            asset  = r.get("asset", "")
+            bar_px = bar_close_prices.get(asset)
+            if not bar_px or bar_px <= 0:
+                continue
+            exec_px   = r["avg_price"]
+            fill_size = r["filled_size"]
+            side      = r.get("side", "buy")
+            if side == "buy":
+                bc_adjustment += (bar_px - exec_px) * fill_size
+            else:
+                bc_adjustment += (exec_px - bar_px) * fill_size
+            bc_has_prices = True
+
+        if bc_has_prices and actual_equity > 0:
+            bc_equity = round(actual_equity + bc_adjustment, 2)
+            try:
+                bc_snaps: list[dict] = json.loads(
+                    signal_state.get("bc_snapshots", "[]"))
+            except Exception:
+                bc_snaps = []
+            now_ms  = int(time.time() * 1000)
+            if bc_snaps and bc_snaps[-1]["ts"] // 3_600_000 == now_ms // 3_600_000:
+                bc_snaps[-1] = {"ts": now_ms, "v": bc_equity}
+            else:
+                bc_snaps.append({"ts": now_ms, "v": bc_equity})
+            bc_snaps = bc_snaps[-3650:]
+            signal_state["bc_snapshots"] = json.dumps(bc_snaps)
+            print(f"[bc_equity] actual={actual_equity:.2f}  "
+                  f"daily_open={bc_equity:.2f}  adj={bc_adjustment:+.2f}")
+    except Exception as e:
+        print(f"[bc_equity] snapshot failed: {e}")
 
     return {
         "status":       "rebalanced",
@@ -764,16 +855,16 @@ def check_signal():
         signal_state["last_signal_id"] = msg_id
         return {"status": "no_change", "signal_id": msg_id}
 
-    # Capture bar close prices at detection time (before execution)
+    # Capture daily-open prices (bar close = 00:00 UTC price on signal date)
     signal_assets = [
         a["asset"] for a in parsed["allocations"]
         if ASSET_TO_TICKER.get(a["asset"], a["asset"]) not in ("USDC", "")
     ]
     try:
-        bar_close_px = get_bar_close_prices(signal_assets)
+        bar_close_px = get_daily_open_prices(signal_assets, timestamp)
         signal_state["bar_close_prices"] = json.dumps(bar_close_px)
     except Exception as e:
-        print(f"Failed to capture bar close prices: {e}")
+        print(f"Failed to capture daily open prices: {e}")
 
     if is_autonomous_hours():
         send_slack(
@@ -1054,6 +1145,20 @@ function login(){{
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
 
+    # ── Bar-close equity history API ────────────────────────────────────────
+    if action == "bc_equity_history":
+        if not authorized:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "not authorized"}, status_code=403)
+        try:
+            raw   = signal_state.get("bc_snapshots", "[]")
+            snaps = json.loads(raw)
+            from fastapi.responses import JSONResponse
+            return JSONResponse(snaps)
+        except Exception:
+            from fastapi.responses import JSONResponse
+            return JSONResponse([], status_code=200)
+
     # ── Dashboard ──────────────────────────────────────────────────────────
     return HTMLResponse(_render_dashboard())
 
@@ -1241,7 +1346,7 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       <div class="chart-controls">
         <div class="ctrl-group" id="seriesTabs">
           <button class="ctrl-btn active" onclick="setSeries('actual',this)">Actual</button>
-          <button class="ctrl-btn" onclick="setSeries('barclose',this)">Bar close</button>
+          <button class="ctrl-btn" onclick="setSeries('barclose',this)">Daily open</button>
           <button class="ctrl-btn" onclick="setSeries('both',this)">Both</button>
         </div>
         <div class="ctrl-group" id="rangeTabs">
@@ -1279,14 +1384,151 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
   <span id="footerTime"></span>
 </div>
 <script>
-const SK='equity_history_v2',BC='barclose_history_v2';
-function loadH(k){try{return JSON.parse(localStorage.getItem(k)||'[]')}catch{return[]}}
-function saveH(k,h){try{localStorage.setItem(k,JSON.stringify(h.slice(-365)))}catch{}}
-function recordPt(k,v){const h=loadH(k);const t=new Date().toISOString().slice(0,10);const l=h[h.length-1];if(l&&l.date===t){l.value=parseFloat(v.toFixed(2))}else{h.push({date:t,value:parseFloat(v.toFixed(2))})}saveH(k,h);return h}
-function filterH(h,r){if(r==='all')return h;const d=r==='7d'?7:30;const c=new Date();c.setDate(c.getDate()-d);const cs=c.toISOString().slice(0,10);return h.filter(p=>p.date>=cs)}
-let chart=null,fullA=[],fullB=[],range='7d',series='actual';
+// ── Cloud-first equity storage ─────────────────────────────────────────────
+// Primary store: Modal Dict via ?action=equity_history (written server-side every poll)
+// Fallback:      localStorage for offline resilience + migration of old local data
+// On load: fetch cloud → merge with local → render
+// On load: also push any LOCAL-ONLY points to cloud (one-time migration)
+
+const LS_KEY='equity_history_v2', LS_BC='barclose_history_v2';
+
+function lsLoad(k){try{return JSON.parse(localStorage.getItem(k)||'[]')}catch{return[]}}
+function lsSave(k,h){try{localStorage.setItem(k,JSON.stringify(h.slice(-730)))}catch{}}
+
+// Merge two [{date,value}] arrays: keep one point per date (latest wins), sort asc
+function mergeByDate(a, b){
+  const m={};
+  for(const p of [...a,...b]) m[p.date]=p.value;
+  return Object.entries(m).sort((x,y)=>x[0]<y[0]?-1:1).map(([date,value])=>({date,value}));
+}
+
+// Convert cloud [{ts,v}] → [{date,value}], keeping one point per date (last wins)
+function cloudToDateSeries(snaps){
+  const m={};
+  for(const s of snaps){
+    const date=new Date(s.ts).toISOString().slice(0,10);
+    m[date]=s.v;
+  }
+  return Object.entries(m).sort((a,b)=>a[0]<b[0]?-1:1).map(([date,value])=>({date,value}));
+}
+
+// Convert [{date,value}] → [{ts,v}] using noon UTC for the date
+function dateSeriesToCloud(pts){
+  return pts.map(p=>({ts:new Date(p.date+'T12:00:00Z').getTime(),v:p.value}));
+}
+
+const _authParam = new URLSearchParams(window.location.search).get('auth')||'';
+function _ap(sep='?'){return _authParam?sep+'auth='+encodeURIComponent(_authParam):'';}
+
+async function fetchCloudEquity(){
+  try{
+    const r=await fetch('?action=equity_history'+_ap());
+    if(!r.ok) return [];
+    const d=await r.json();
+    return Array.isArray(d)?d:[];
+  }catch{return[];}
+}
+
+async function pushToCloud(pts){
+  // pts = [{ts,v}]
+  if(!pts.length) return;
+  try{
+    const encoded=encodeURIComponent(JSON.stringify({points:pts}));
+    await fetch('?action=equity_store_backtest'+_ap('&')+'&points='+encoded);
+  }catch{}
+}
+
+// Record today's value into cloud via the dedicated endpoint
+// (server-side record_equity_snapshot already does this on every poll,
+//  but this catches the case where the user visits between polls)
+async function cloudRecordNow(value){
+  if(value<=0) return;
+  const nowMs=Date.now();
+  await pushToCloud([{ts:nowMs,v:parseFloat(value.toFixed(2))}]);
+}
+
+let fullA=[], fullB=[], _cloudLoaded=false;
+
+async function initEquity(accountValue){
+  // 1. Load actual equity + daily-open equity from cloud in parallel
+  const [cloudSnaps, bcSnaps] = await Promise.all([
+    fetchCloudEquity(),
+    fetchBcEquity(),
+  ]);
+  const cloudSeries  = cloudToDateSeries(cloudSnaps);
+  const bcCloudSeries = cloudToDateSeries(bcSnaps);
+
+  // 2. Load local history cache (pre-cloud data)
+  const localSeries = lsLoad(LS_KEY);
+
+  // 3. One-time migration of existing local data to cloud
+  if(localSeries.length>0 && !localStorage.getItem('_cloud_migrated')){
+    await pushToCloud(dateSeriesToCloud(localSeries));
+    localStorage.setItem('_cloud_migrated','1');
+  }
+
+  // 4. Merge cloud + local (cloud is authoritative on same date)
+  const merged = mergeByDate(localSeries, cloudSeries);
+
+  // 5. Upsert today's live value
+  if(accountValue>0){
+    const today=new Date().toISOString().slice(0,10);
+    const last=merged[merged.length-1];
+    if(last&&last.date===today){last.value=parseFloat(accountValue.toFixed(2));}
+    else{merged.push({date:today,value:parseFloat(accountValue.toFixed(2))});}
+    await cloudRecordNow(accountValue);
+  }
+
+  lsSave(LS_KEY, merged);
+  fullA = merged;
+
+  // 6. Daily-open equity from cloud (stored at execution time — correct point-in-time)
+  fullB = bcCloudSeries;
+
+  _cloudLoaded=true;
+  if(chart){chart.destroy();chart=null;}
+  buildChart();
+
+  // 7. All-time PnL
+  const _atEl=document.getElementById('allTimePnl');
+  const _atSub=document.getElementById('allTimePnlSub');
+  if(fullA.length>=2){
+    const _atPnl=accountValue-fullA[0].value;
+    if(_atEl){_atEl.textContent=(_atPnl>=0?'+':'')+fmt$(_atPnl);_atEl.className='metric-value '+(_atPnl>=0?'pos':'neg')}
+    if(_atSub){const _pct=(_atPnl/fullA[0].value*100);_atSub.textContent=(_pct>=0?'+':'')+_pct.toFixed(1)+'%  since '+fullA[0].date}
+  } else {
+    if(_atEl){_atEl.textContent='—';_atEl.className='metric-value'}
+    if(_atSub){_atSub.textContent='accumulating history…'}
+  }
+}
+
+async function fetchBcEquity(){
+  try{
+    const r=await fetch('?action=bc_equity_history'+_ap());
+    if(!r.ok) return [];
+    const d=await r.json();
+    return Array.isArray(d)?d:[];
+  }catch{return[];}
+}
+
+function filterH(h,r){
+  if(r==='all')return h;
+  const d=r==='7d'?7:30;
+  const c=new Date();c.setDate(c.getDate()-d);
+  const cs=c.toISOString().slice(0,10);
+  return h.filter(p=>p.date>=cs);
+}
+
+let chart=null, range='7d', series='actual';
 function fmt$(v){return'$'+parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
-function buildLegend(a,b){const el=document.getElementById('chartLegend');let h='';if(a)h+='<div class="legend-item"><div class="legend-dot" style="background:#c8f563"></div>Actual equity</div>';if(b)h+='<div class="legend-item"><div class="legend-dot" style="background:#c084fc"></div>Bar close equity</div>';if(a&&b)h+='<div class="legend-item" style="color:#888;font-size:10px">gap = execution alpha loss</div>';el.innerHTML=h}
+function buildLegend(a,b){
+  const el=document.getElementById('chartLegend');
+  let h='';
+  if(a)h+='<div class="legend-item"><div class="legend-dot" style="background:#c8f563"></div>Actual equity</div>';
+  if(b)h+='<div class="legend-item"><div class="legend-dot" style="background:#c084fc"></div>Daily open equity</div>';
+  if(a&&b)h+='<div class="legend-item" style="color:#888;font-size:10px">gap = intraday timing vs daily open</div>';
+  el.innerHTML=h;
+}
 function buildChart(){
   const showA=series==='actual'||series==='both';
   const showB=series==='barclose'||series==='both';
@@ -1297,18 +1539,30 @@ function buildChart(){
   if(!has){noH.style.display='block';wrap.style.display='none';return}
   noH.style.display='none';wrap.style.display='block';
   const allDates=[...new Set([...(showA?fa:[]).map(p=>p.date),...(showB?fb:[]).map(p=>p.date)])].sort();
-  const labels=allDates.map(d=>{const dt=new Date(d);return dt.toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
+  const labels=allDates.map(d=>{const dt=new Date(d+'T12:00:00Z');return dt.toLocaleDateString('en-GB',{day:'numeric',month:'short'})});
   const toMap=arr=>Object.fromEntries(arr.map(p=>[p.date,p.value]));
   const aMap=toMap(fa);const bMap=toMap(fb);
   const datasets=[];
   if(showA&&fa.length>=2){const data=allDates.map(d=>aMap[d]??null);const up=fa[fa.length-1].value>=fa[0].value;datasets.push({label:'Actual',data,borderColor:up?'#c8f563':'#ff5c5c',backgroundColor:up?'rgba(200,245,99,0.06)':'rgba(255,92,92,0.06)',borderWidth:1.5,pointRadius:allDates.length>30?0:3,pointHoverRadius:5,pointBackgroundColor:up?'#c8f563':'#ff5c5c',fill:series==='actual',tension:0.35,spanGaps:true})}
   if(showB&&fb.length>=2){datasets.push({label:'Bar close',data:allDates.map(d=>bMap[d]??null),borderColor:'#c084fc',backgroundColor:'rgba(192,132,252,0.06)',borderWidth:1.5,borderDash:[4,3],pointRadius:allDates.length>30?0:3,pointHoverRadius:5,pointBackgroundColor:'#c084fc',fill:series==='barclose',tension:0.35,spanGaps:true})}
   if(chart){chart.data.labels=labels;chart.data.datasets=datasets;chart.update('active');return}
-  chart=new Chart(document.getElementById('equityChart'),{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1a1a',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,titleColor:'#666',bodyColor:'#f0ede8',titleFont:{family:'DM Mono',size:11},bodyFont:{family:'DM Mono',size:12},callbacks:{label:ctx=>{const pre=ctx.dataset.label==='Bar close'?' Bar close: ':' Actual:    ';return pre+fmt$(ctx.parsed.y)}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#555',font:{family:'DM Mono',size:11},maxTicksLimit:7},border:{display:false}},y:{position:'right',grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#555',font:{family:'DM Mono',size:11},callback:v=>'$'+v.toLocaleString()},border:{display:false}}}}});
+  chart=new Chart(document.getElementById('equityChart'),{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1a1a',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,titleColor:'#666',bodyColor:'#f0ede8',titleFont:{family:'DM Mono',size:11},bodyFont:{family:'DM Mono',size:12},callbacks:{label:ctx=>{const pre=ctx.dataset.label==='Bar close'?' Daily open: ':' Actual:     ';return pre+fmt$(ctx.parsed.y)}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#555',font:{family:'DM Mono',size:11},maxTicksLimit:7},border:{display:false}},y:{position:'right',grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#555',font:{family:'DM Mono',size:11},callback:v=>'$'+v.toLocaleString()},border:{display:false}}}}});
 }
 function setRange(r,el){range=r;document.querySelectorAll('#rangeTabs .ctrl-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');if(chart){chart.destroy();chart=null}buildChart()}
 function setSeries(s,el){series=s;document.querySelectorAll('#seriesTabs .ctrl-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');if(chart){chart.destroy();chart=null}buildChart()}
-function exportCSV(){const a=loadH(SK);const b=loadH(BC);if(!a.length&&!b.length){alert('No equity history to export yet.');return}const dates=[...new Set([...a.map(p=>p.date),...b.map(p=>p.date)])].sort();const am=Object.fromEntries(a.map(p=>[p.date,p.value]));const bm=Object.fromEntries(b.map(p=>[p.date,p.value]));const rows=[['date','actual_equity_usd','barclose_equity_usd']];for(const d of dates)rows.push([d,am[d]??'',bm[d]??'']);const csv=rows.map(r=>r.join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a2=document.createElement('a');a2.href=url;a2.download='equity_'+new Date().toISOString().slice(0,10)+'.csv';a2.click();URL.revokeObjectURL(url)}
+function exportCSV(){
+  const a=fullA;const b=fullB;
+  if(!a.length&&!b.length){alert('No equity history yet.');return}
+  const dates=[...new Set([...a.map(p=>p.date),...b.map(p=>p.date)])].sort();
+  const am=Object.fromEntries(a.map(p=>[p.date,p.value]));
+  const bm=Object.fromEntries(b.map(p=>[p.date,p.value]));
+  const rows=[['date','actual_equity_usd','barclose_equity_usd']];
+  for(const d of dates)rows.push([d,am[d]??'',bm[d]??'']);
+  const csv=rows.map(r=>r.join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a2=document.createElement('a');a2.href=url;a2.download='equity_'+new Date().toISOString().slice(0,10)+'.csv';a2.click();URL.revokeObjectURL(url);
+}
 const DUST_USD=0.5;
 let _hideDust=true;
 let _positions=[];
@@ -1370,30 +1624,14 @@ function toggleDust(btn){
   renderPositions();
 }
 function init(d){
-  const{account,positions,signal,pending,lastActedId,trwOk,hlOk,isAuto,approvalToken,barCloseEquity}=d;
+  const{account,positions,signal,pending,lastActedId,trwOk,hlOk,isAuto,approvalToken}=d;
   document.getElementById('badges').innerHTML=`<span class="badge ${trwOk?'badge-ok':'badge-err'}">TRW ${trwOk?'OK':'ERR'}</span><span class="badge ${hlOk?'badge-ok':'badge-err'}">HL ${hlOk?'OK':'ERR'}</span><span class="badge ${isAuto?'badge-auto':'badge-manual'}" title="${isAuto?'Autonomous 00:00–05:00 UK':'Approval required 05:00–00:00 UK'}">${isAuto?'Auto 00–05':'Approval'}</span>`;
   const tp=positions.reduce((s,p)=>s+p.pnl,0);
   document.getElementById('accountValue').textContent=fmt$(account.value);
   document.getElementById('totalPnl').textContent=(tp>=0?'+':'')+fmt$(tp);
   document.getElementById('totalPnl').className='metric-value '+(tp>=0?'pos':'neg');
 
-  // All-time PnL: difference between current equity and first recorded equity point
-  const _allH=loadH(SK);
-  const _atEl=document.getElementById('allTimePnl');
-  const _atSub=document.getElementById('allTimePnlSub');
-  if(_allH.length>=2){
-    const _atPnl=account.value-_allH[0].value;
-    if(_atEl){_atEl.textContent=(_atPnl>=0?'+':'')+fmt$(_atPnl);_atEl.className='metric-value '+(_atPnl>=0?'pos':'neg')}
-    if(_atSub){const _pct=(_atPnl/_allH[0].value*100);_atSub.textContent=(_pct>=0?'+':'')+_pct.toFixed(1)+'%  since '+_allH[0].date}
-  } else {
-    if(_atEl){_atEl.textContent='—';_atEl.className='metric-value'}
-    if(_atSub){_atSub.textContent='accumulating history...'}
-  }
-
-  fullA=account.value>0?recordPt(SK,account.value):loadH(SK);
-  fullB=loadH(BC);
-  if(barCloseEquity&&barCloseEquity>0)fullB=recordPt(BC,barCloseEquity);
-  buildChart();
+  // Render positions and signal immediately (no async dependency)
   _positions=positions;
   renderPositions();
   const al=document.getElementById('allocList');const st=document.getElementById('signalTime');
@@ -1403,17 +1641,24 @@ function init(d){
   const forceBtn=document.getElementById('forceBtn');
   if(forceBtn&&approvalToken)forceBtn.href='?action=force&token='+approvalToken;
 
+  // Auth-preserving links
   const _auth=new URLSearchParams(window.location.search).get('auth')||'';
   if(_auth){
     document.querySelectorAll('a[href^="?"]').forEach(a=>{
       if(!a.href.includes('auth='))a.href+=(a.href.includes('?')&&a.href!=='?'?'&':'?')+'auth='+encodeURIComponent(_auth);
     });
-    // Fix tab nav links
     const histTab=document.getElementById('histTab');
     if(histTab)histTab.href='?action=history&auth='+encodeURIComponent(_auth);
   }
   document.getElementById('lastActed').textContent='Last acted: '+(lastActedId&&lastActedId!=='none'?lastActedId.slice(0,12)+'...':'none');
   document.getElementById('footerTime').textContent=new Date().toLocaleString('en-GB',{timeZone:'UTC'})+' UTC';
+
+  // Equity chart: async cloud fetch then render
+  // Show local cache immediately so chart isn't blank while cloud loads
+  fullA=lsLoad(LS_KEY);
+  fullB=lsLoad(LS_BC);
+  if(fullA.length>=2||fullB.length>=2) buildChart();
+  initEquity(account.value);  // async: fetches cloud, merges, re-renders
 }
 init(DASHBOARD_DATA);
 
@@ -1500,37 +1745,6 @@ def _render_dashboard() -> str:
     except KeyError:
         pass
 
-    # ── Bar close equity reconstruction ──────────────────────────────────────
-    # Computes what the portfolio would be worth if filled exactly at bar close.
-    # For assets where we have a bar-close price: scale target % by ratio of
-    # current price to bar-close price so we get the fill-price-adjusted value.
-    bar_close_equity = None
-    try:
-        bar_close_px   = json.loads(signal_state.get("bar_close_prices", "{}"))
-        account_value  = state.get("account_value", 0)
-        if bar_close_px and parsed and parsed.get("allocations") and account_value > 0:
-            all_mids_now: dict = {}
-            try:
-                _info, _ = get_hl_clients()
-                all_mids_now = _info.all_mids()
-            except Exception:
-                pass
-            bc_equity = 0.0
-            for alloc in parsed["allocations"]:
-                asset    = alloc["asset"]
-                pct      = alloc["percent"] / 100.0
-                bc_price = bar_close_px.get(asset)
-                ticker   = ASSET_TO_TICKER.get(asset, asset)
-                now_price = float(all_mids_now.get(ticker, 0)) if all_mids_now else 0
-                if bc_price and bc_price > 0 and now_price > 0:
-                    # Ratio: if you bought at bar-close, your position is now worth:
-                    bc_equity += account_value * pct * (now_price / bc_price)
-                else:
-                    bc_equity += account_value * pct  # fallback: same value
-            bar_close_equity = round(bc_equity, 2)
-    except Exception:
-        pass
-
     positions_js = [
         {
             "coin":    coin,
@@ -1555,16 +1769,15 @@ def _render_dashboard() -> str:
         }
 
     dashboard_data = {
-        "trwOk":          trw_ok,
-        "hlOk":           hl_ok,
-        "isAuto":         is_autonomous_hours(),
-        "account":        {"value": state.get("account_value", 0)},
-        "positions":      positions_js,
-        "signal":         signal_js,
-        "pending":        pending_allocs,
-        "approvalToken":  approval_token,
-        "lastActedId":    last_acted_id,
-        "barCloseEquity": bar_close_equity,
+        "trwOk":         trw_ok,
+        "hlOk":          hl_ok,
+        "isAuto":        is_autonomous_hours(),
+        "account":       {"value": state.get("account_value", 0)},
+        "positions":     positions_js,
+        "signal":        signal_js,
+        "pending":       pending_allocs,
+        "approvalToken": approval_token,
+        "lastActedId":   last_acted_id,
     }
 
     data_json = json.dumps(dashboard_data)
@@ -1838,8 +2051,7 @@ _HISTORY_HTML = r"""<!DOCTYPE html>
       <span id="statusMsg" style="font-size:11px"></span>
     </div>
     <div class="config-note">
-      Prices: <strong>Binance 5m candle close</strong> at exact signal timestamp (falls back 1m → 15m → 1h).
-      PAXG uses CoinGecko daily. Fees on rebalance notional. Slippage excluded.
+      Prices from <strong>Hyperliquid candleSnapshot API</strong> — same exchange, exact prices. 5m close at signal time for signal series; 1d open at 00:00 UTC for daily open series. Fees on rebalance notional. Slippage excluded.
       After running, backtest equity is pushed to cloud storage so it fills in history for everyone.
     </div>
   </div>
@@ -1858,7 +2070,7 @@ _HISTORY_HTML = r"""<!DOCTYPE html>
       <div class="chart-controls">
         <div class="ctrl-group" id="seriesTabs">
           <button class="ctrl-btn active" onclick="setSeries('actual',this)">Signal px</button>
-          <button class="ctrl-btn" onclick="setSeries('barclose',this)">Bar close</button>
+          <button class="ctrl-btn" onclick="setSeries('barclose',this)">Daily open</button>
           <button class="ctrl-btn" onclick="setSeries('live',this)">Live</button>
           <button class="ctrl-btn" onclick="setSeries('merged',this)">Merged</button>
         </div>
@@ -1877,7 +2089,7 @@ _HISTORY_HTML = r"""<!DOCTYPE html>
     </div>
     <div class="chart-note">
       <strong>Signal px</strong> — 5m close at exact signal time.
-      <strong>Bar close</strong> — next complete 5m bar close (worst-case fill timing).
+      <strong>Daily open</strong> — portfolio value if rebalanced at UTC 00:00 on the signal date.
       <strong>Live</strong> — real account snapshots stored in cloud (recorded hourly by bot).
       <strong>Merged</strong> — backtest fills in pre-deployment history, live takes over from bot launch.
     </div>
@@ -1913,7 +2125,7 @@ _HISTORY_HTML = r"""<!DOCTYPE html>
 </div>
 
 <div class="footer">
-  <span>Prices: Binance 5m close · CoinGecko daily (PAXG) · Cloud equity stored per-hour in Modal Dict</span>
+  <span>Prices: Hyperliquid candleSnapshot API · 5m candle close at signal time · 1d open at 00:00 UTC for daily open series</span>
   <span id="footerTime"></span>
 </div>
 
@@ -1949,54 +2161,106 @@ function parseSignal(content) {
   return r;
 }
 
-// ── Price fetching ─────────────────────────────────────────────────────────────
-const BINANCE_SYM = {
-  ETH:'ETHUSDT',BTC:'BTCUSDT',HYPE:'HYPEUSDT',SOL:'SOLUSDT',
-  DOGE:'DOGEUSDT',XRP:'XRPUSDT',BNB:'BNBUSDT',AVAX:'AVAXUSDT',
-  LINK:'LINKUSDT',UNI:'UNIUSDT',AAVE:'AAVEUSDT',ARB:'ARBUSDT',
-};
+// ── Price fetching — Hyperliquid candleSnapshot API ───────────────────────────
+//
+// All prices come from https://api.hyperliquid.xyz/info (POST, candleSnapshot).
+// Coin names match HL perp tickers: ETH, BTC, HYPE, SOL, PAXG, etc.
+// No Binance or CoinGecko dependency — prices are exactly what HL traded at.
+//
+// HL candle fields:
+//   t = open time ms,  T = close time ms
+//   o = open,  h = high,  l = low,  c = close,  v = volume
+//
+// barClose=false → close of the 5m candle containing the signal timestamp
+//                  (what HL was trading at the exact minute of the signal)
+// barClose=true  → open of the 1d candle at 00:00 UTC on the signal date
+//                  (what HL was trading at midnight = "daily open" benchmark)
+
+const HL_API = 'https://api.hyperliquid.xyz/info';
 const priceCache = {};
-async function getBinancePrice(asset, tsMs, barClose=false) {
-  const sym = BINANCE_SYM[asset]; if (!sym) return null;
-  const intervals = [{iv:'5m',ms:300_000},{iv:'1m',ms:60_000},{iv:'15m',ms:900_000},{iv:'1h',ms:3_600_000}];
-  for (const {iv, ms} of intervals) {
-    const candleStart = Math.floor(tsMs/ms)*ms;
-    const targetStart = barClose ? candleStart+ms : candleStart;
-    const ck = `${sym}_${targetStart}_${iv}`;
-    if (priceCache[ck]!==undefined) return priceCache[ck];
-    try {
-      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${iv}&startTime=${targetStart}&limit=1`);
-      if (!r.ok) continue;
-      const d = await r.json();
-      if (!d||!d[0]) continue;
-      const p = parseFloat(d[0][4]);
-      priceCache[ck]=p; return p;
-    } catch { continue; }
+
+// Canonical HL ticker for each asset name used in signals
+const HL_TICKER = {
+  'ETH':'ETH','BTC':'BTC','HYPE':'HYPE','SOL':'SOL',
+  'DOGE':'DOGE','XRP':'XRP','BNB':'BNB','AVAX':'AVAX',
+  'LINK':'LINK','UNI':'UNI','AAVE':'AAVE','ARB':'ARB',
+  'PAXG':'PAXG','PAXG/XAUT':'PAXG','XAUT':'PAXG',
+};
+
+// Returns midnight UTC timestamp (ms) of the day containing tsMs
+function midnightUtc(tsMs) {
+  const d = new Date(tsMs);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+async function hlCandle(coin, interval, startTime, endTime) {
+  const ck = `${coin}_${interval}_${startTime}`;
+  if (priceCache[ck] !== undefined) return priceCache[ck];
+  try {
+    const r = await fetch(HL_API, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        type: 'candleSnapshot',
+        req: { coin, interval, startTime, endTime },
+      }),
+    });
+    if (!r.ok) return null;
+    const candles = await r.json();
+    if (!Array.isArray(candles) || !candles.length) return null;
+    priceCache[ck] = candles;
+    return candles;
+  } catch { return null; }
+}
+
+/**
+ * Get HL price for an asset at a given timestamp.
+ *
+ * barClose=false: close of the 5m candle that contains tsMs.
+ *   Falls back to 15m → 1h if 5m unavailable.
+ *
+ * barClose=true: open of the 1d candle at 00:00 UTC on the signal date.
+ *   Falls back to open of the 1h candle at 00:00 UTC.
+ */
+async function getHlPrice(asset, tsMs, barClose=false) {
+  const coin = HL_TICKER[asset] || asset.split('/')[0].toUpperCase();
+  if (coin === 'USDC') return 1.0;
+
+  if (barClose) {
+    const midnight = midnightUtc(tsMs);
+    // Try 1d candle first (most accurate daily open), then 1h
+    for (const [iv, winMs] of [['1d', 86_400_000], ['1h', 3_600_000]]) {
+      const candles = await hlCandle(coin, iv, midnight, midnight + winMs);
+      if (candles && candles[0]) return parseFloat(candles[0].o); // open = price at 00:00
+    }
+    return null;
+  }
+
+  // Signal price: close of candle containing tsMs
+  for (const [iv, barMs] of [['5m', 300_000], ['15m', 900_000], ['1h', 3_600_000]]) {
+    const candleStart = Math.floor(tsMs / barMs) * barMs;
+    const candles = await hlCandle(coin, iv, candleStart, candleStart + barMs);
+    if (candles) {
+      // Find the candle that is fully closed and contains tsMs
+      const closed = candles.filter(c => parseInt(c.T) <= tsMs + barMs);
+      if (closed.length) return parseFloat(closed[closed.length - 1].c);
+    }
   }
   return null;
 }
-const cgCache = {};
-async function getPaxgPrice(tsMs) {
-  const d=new Date(tsMs);
-  const key=`${String(d.getUTCDate()).padStart(2,'0')}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${d.getUTCFullYear()}`;
-  if (cgCache[key]!==undefined) return cgCache[key];
-  try {
-    const r=await fetch(`https://api.coingecko.com/api/v3/coins/pax-gold/history?date=${key}&localization=false`);
-    if (!r.ok) return null;
-    const data=await r.json();
-    const p=data?.market_data?.current_price?.usd||null;
-    if (p) cgCache[key]=p; return p;
-  } catch { return null; }
+
+async function getPrice(asset, tsMs, barClose=false) {
+  const a = asset.split('/')[0];
+  if (a === 'USDC' || a === 'CASH') return 1.0;
+  return getHlPrice(asset, tsMs, barClose);
 }
-async function getPrice(asset,tsMs,barClose=false) {
-  const a=asset.split('/')[0];
-  if (a==='PAXG'||a==='XAUT') return getPaxgPrice(tsMs);
-  if (a==='USDC'||a==='CASH') return 1.0;
-  return getBinancePrice(a,tsMs,barClose);
-}
-async function fetchAllPrices(assets,tsMs,barClose) {
-  const prices={};
-  await Promise.all(assets.map(async a=>{const p=await getPrice(a,tsMs,barClose);if(p!==null)prices[a]=p;}));
+
+async function fetchAllPrices(assets, tsMs, barClose) {
+  const prices = {};
+  await Promise.all(assets.map(async a => {
+    const p = await getPrice(a, tsMs, barClose);
+    if (p !== null) prices[a] = p;
+  }));
   return prices;
 }
 
@@ -2079,7 +2343,7 @@ async function runBacktest() {
   rawSignals.sort((a,b)=>a.timestamp-b.timestamp);
   const startMs=startDateStr?new Date(startDateStr+'T00:00:00Z').getTime():0;
   const signals=rawSignals.filter(m=>m.timestamp>=startMs);
-  setProgress(12,`${signals.length} signals loaded — fetching prices…`,'Using Binance 5m candles at signal timestamp');
+  setProgress(12,`${signals.length} signals loaded — fetching prices…`,'Using Hyperliquid candleSnapshot API');
 
   const timeline=[];
   let equity=startBalance, equityBC=startBalance;
@@ -2340,7 +2604,7 @@ function filterRange(arr,range) {
 function buildLegend(showA,showB,showL,showM) {
   let h='';
   if(showA)h+='<div class="legend-item"><div class="legend-dot" style="background:#c8f563"></div>Signal 5m close</div>';
-  if(showB)h+='<div class="legend-item"><div class="legend-dot" style="background:#c084fc"></div>Bar close</div>';
+  if(showB)h+='<div class="legend-item"><div class="legend-dot" style="background:#c084fc"></div>Daily open (00:00 UTC)</div>';
   if(showL)h+='<div class="legend-item"><div class="legend-dot" style="background:#5b9cf6"></div>Live (cloud)</div>';
   if(showM)h+='<div class="legend-item"><div class="legend-dot" style="background:#f5a623"></div>Merged</div>';
   document.getElementById('chartLegend').innerHTML=h;
@@ -2374,7 +2638,7 @@ function renderChart() {
       pointRadius:allDates.length>80?0:3,pointHoverRadius:5,fill,tension:.35,spanGaps:true};
   };
   if(showA&&fa.length>=2)datasets.push(mkDs(allDates.map(d=>aMap[d]??null),'Signal px','auto',false,true));
-  if(showB&&fb.length>=2)datasets.push(mkDs(allDates.map(d=>bMap[d]??null),'Bar close','#c084fc',true,true));
+  if(showB&&fb.length>=2)datasets.push(mkDs(allDates.map(d=>bMap[d]??null),'Daily open','#c084fc',true,true));
   if(showL&&fl.length>=2)datasets.push(mkDs(allDates.map(d=>lMap[d]??null),'Live','#5b9cf6',false,true));
   if(showM&&fm.length>=2)datasets.push(mkDs(allDates.map(d=>mMap[d]??null),'Merged','#f5a623',false,true));
   if(chart){chart.destroy();chart=null;}
