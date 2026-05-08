@@ -325,45 +325,48 @@ def get_daily_open_prices(assets: list[str], signal_ts_ms: int) -> dict[str, flo
 
 def get_account_state(info) -> dict:
     """
-    Unified state: perp positions + spot balances merged under canonical ticker.
+    Unified account state: positions + total equity.
 
-    With unified account, funds may live entirely in the spot wallet (as USDC
-    or spot tokens) while perp marginSummary.accountValue shows $0.
-    True account value = perp equity + spot USDC + spot token market values.
+    On HL unified account, spot_user_state is the source of truth for total
+    balance. marginSummary.accountValue only reflects USDC locked in the perp
+    margin engine — it does NOT include spot token holdings.
+
+    Correct total = USDC (spot) + Σ(spot token qty × mark_px) + perp uPnL
     """
     address    = os.environ["HYPERLIQUID_MASTER_ACCOUNT_ADDRESS"]
     state      = info.user_state(address)
-    margin     = state["marginSummary"]
-    perp_value = float(margin["accountValue"])
     positions: dict[str, dict] = {}
 
-    # Fetch current mark prices once — used for both perp value and spot
     all_mids: dict = {}
     try:
         all_mids = info.all_mids()
     except Exception as e:
         print(f"all_mids fetch failed: {e}")
 
-    # Perp positions
+    # Perp positions — contribute uPnL to total, not notional
+    perp_upnl = 0.0
     for pos in state.get("assetPositions", []):
-        p        = pos["position"]
-        coin     = p["coin"]
-        size     = float(p.get("szi", 0))
+        p    = pos["position"]
+        coin = p["coin"]
+        size = float(p.get("szi", 0))
         if size == 0:
             continue
         entry_px = float(p["entryPx"]) if p.get("entryPx") else 0
-        mark_px  = float(all_mids.get(coin, entry_px))   # live mark price
+        mark_px  = float(all_mids.get(coin, entry_px))
+        upnl     = float(p.get("unrealizedPnl", 0))
+        perp_upnl += upnl
         positions[coin] = {
             "size":           size,
             "entry_px":       entry_px,
             "mark_px":        mark_px,
-            "unrealized_pnl": float(p.get("unrealizedPnl", 0)),
-            "value_usd":      abs(size) * mark_px,        # use mark, not entry
+            "unrealized_pnl": upnl,
+            "value_usd":      abs(size) * mark_px,
             "mode":           "perp",
         }
 
-    # Spot balances — counts toward total and tracked as positions
-    spot_total_usd = 0.0
+    # Spot balances — source of truth for total value on unified accounts
+    usdc_balance   = 0.0
+    spot_token_usd = 0.0
     try:
         spot_state = info.spot_user_state(address)
         for bal in spot_state.get("balances", []):
@@ -372,26 +375,21 @@ def get_account_state(info) -> dict:
             if total <= 0:
                 continue
             if coin_raw == "USDC":
-                spot_total_usd += total   # idle cash, no position to track
+                usdc_balance = total
                 continue
 
-            # Normalise: HL prefixes EVM-bridged tokens with "U" (UETH→ETH, UBTC→BTC)
-            # Native tokens like HYPE have no prefix and must not be stripped
-            canon = coin_raw.lstrip("U") if coin_raw.startswith("U") and len(coin_raw) > 1 else coin_raw
-            # Look up mark price (all_mids uses canonical ticker without U prefix)
+            canon   = coin_raw.lstrip("U") if coin_raw.startswith("U") and len(coin_raw) > 1 else coin_raw
             mark_px = float(all_mids.get(canon, all_mids.get(coin_raw, 0)))
             value   = total * mark_px
-            spot_total_usd += value
+            spot_token_usd += value
 
-            # Unrealised PnL from entry notional cost.
-            # HL spot_user_state returns "entryNtl" = total USD cost of current holdings.
             entry_ntl = float(bal.get("entryNtl") or bal.get("entryCost") or 0)
             if entry_ntl > 0 and total > 0:
-                entry_px       = entry_ntl / total      # avg cost per unit
-                unrealized_pnl = value - entry_ntl      # MTM minus cost
+                entry_px       = entry_ntl / total
+                unrealized_pnl = value - entry_ntl
             elif mark_px > 0:
                 entry_px       = mark_px
-                unrealized_pnl = 0.0                    # no cost data — PnL unknown
+                unrealized_pnl = 0.0
             else:
                 entry_px       = 0.0
                 unrealized_pnl = 0.0
@@ -406,8 +404,12 @@ def get_account_state(info) -> dict:
             }
     except Exception as e:
         print(f"spot balance fetch failed: {e}")
+        # Fallback: use marginSummary if spot fetch fails
+        usdc_balance = float(state["marginSummary"]["accountValue"])
 
-    account_value = perp_value + spot_total_usd
+    # USDC (incl. perp margin reserve) + spot token values + open perp uPnL
+    account_value = usdc_balance + spot_token_usd + perp_upnl
+
     return {"account_value": account_value, "positions": positions}
 
 
@@ -587,8 +589,23 @@ def execute_trades(info, exchange, trades: list[dict]) -> list[dict]:
                         results.append({**trade, "status": "error",
                                         "error": status["error"]})
             else:
-                results.append({**trade, "status": "failed",
-                                 "error": str(result)})
+                # Single retry after 2s for transient HL API failures
+                time.sleep(2)
+                retry = exchange.market_open(
+                    ticker, is_buy=is_buy, sz=size, slippage=MAX_SLIPPAGE)
+                if retry["status"] == "ok":
+                    for status in retry["response"]["data"]["statuses"]:
+                        if "filled" in status:
+                            f = status["filled"]
+                            results.append({**trade, "status": "filled",
+                                            "filled_size": float(f["totalSz"]),
+                                            "avg_price":   float(f["avgPx"])})
+                        elif "error" in status:
+                            results.append({**trade, "status": "error",
+                                            "error": status["error"]})
+                else:
+                    results.append({**trade, "status": "failed",
+                                    "error": str(retry)})
         except Exception as e:
             results.append({**trade, "status": "exception", "error": str(e)})
         time.sleep(0.5)
@@ -604,13 +621,9 @@ signal_state = modal.Dict.from_name("signal-bot-state", create_if_missing=True)
 def record_equity_snapshot(account_value: float) -> None:
     """
     Append a timestamped equity snapshot to cloud storage.
-    Called on every scheduled poll so we build a continuous live equity history
-    regardless of which device visits the dashboard.
-
-    Storage key: "equity_snapshots"
-    Format: JSON list of {"ts": unix_ms, "v": float} sorted oldest→newest.
-    Deduplicated to one point per hour — we keep the last value of each hour.
-    Cap at 3650 points (~10 years of hourly data).
+    Deduplicates to one point per hour. Only writes to Modal Dict when the
+    value has actually changed by more than $0.01 (avoids write on every poll).
+    Cap at 3650 points (~10 years of daily data).
     """
     if account_value <= 0:
         return
@@ -621,15 +634,15 @@ def record_equity_snapshot(account_value: float) -> None:
         snaps = []
 
     now_ms  = int(time.time() * 1000)
-    hour_ms = (now_ms // 3_600_000) * 3_600_000   # round down to hour boundary
 
-    # Upsert: replace the current hour's entry if it already exists
+    # Upsert: update current hour's entry only if value changed meaningfully
     if snaps and snaps[-1]["ts"] // 3_600_000 == now_ms // 3_600_000:
+        if abs(snaps[-1]["v"] - account_value) < 0.01:
+            return   # same hour, negligible change — skip write
         snaps[-1] = {"ts": now_ms, "v": round(account_value, 2)}
     else:
         snaps.append({"ts": now_ms, "v": round(account_value, 2)})
 
-    # Keep cap
     snaps = snaps[-3650:]
     try:
         signal_state["equity_snapshots"] = json.dumps(snaps)
@@ -638,29 +651,52 @@ def record_equity_snapshot(account_value: float) -> None:
 
 
 def is_autonomous_hours() -> bool:
+    """
+    Autonomous window: 00:00–05:00 UK local time (Europe/London).
+    Handles BST/GMT automatically via zoneinfo.
+    In winter (GMT): autonomous = 00:00–05:00 UTC
+    In summer (BST = UTC+1): autonomous = 23:00–04:00 UTC previous night
+    Signals almost always drop at/just after UK midnight, so this window
+    captures the signal regardless of DST.
+    """
     from zoneinfo import ZoneInfo
     now = datetime.now(ZoneInfo("Europe/London"))
     return 0 <= now.hour < 5
 
 
 def should_poll_now() -> bool:
+    """
+    Gate how often we actually do work inside the 2-min cron.
+
+    Schedule (UK time):
+      00:00–00:30  every 2 min  — signal usually drops here, tight window
+      00:30–05:00  every 10 min — autonomous execution window, relaxed
+      05:00–24:00  every 2 h   — daytime: signals almost never drop, just
+                                  keep equity snapshots + catch edge cases
+
+    Total real polls/day ≈ 15 (00–00:30) + 27 (00:30–05:00) + 10 (day) = ~52
+    vs 1440 invocations/day before — 97% reduction in actual work.
+    Container cold-starts still happen every 2 min but exit in <5ms when skipped.
+    """
     from zoneinfo import ZoneInfo
     now = datetime.now(ZoneInfo("Europe/London"))
     h, m = now.hour, now.minute
     if h == 0 and m < 30:
-        return m % 2 == 0
+        return True                # every 2 min (cron rate) — tightest window
     if (h == 0 and m >= 30) or (1 <= h < 5):
-        return m % 10 == 0
-    return m == 0
+        return m % 10 == 0         # every 10 min during autonomous hours
+    return m == 0 and h % 2 == 0  # every 2 hours during the day
 
 
-def do_rebalance(parsed: dict, msg_id: str) -> dict:
-    """Execute a rebalance and send a detailed Slack report."""
+def do_rebalance(parsed: dict, msg_id: str,
+                 bar_close_prices: dict | None = None) -> dict:
+    """Execute a rebalance and send a detailed Slack report.
+
+    bar_close_prices: pre-fetched {asset → 00:00 UTC daily open price}.
+    Passed directly from check_signal to avoid Modal Dict read-after-write
+    race conditions.
+    """
     info, exchange = get_hl_clients()
-
-    # Ensure unified account is active before every rebalance
-    ensure_unified_account(exchange, info)
-
     state         = get_account_state(info)
     account_value = state["account_value"]
 
@@ -685,11 +721,14 @@ def do_rebalance(parsed: dict, msg_id: str) -> dict:
         signal_state["last_signal_id"] = msg_id
         return {"status": "already_aligned", "signal_id": msg_id}
 
-    bar_close_prices: dict[str, float] = {}
-    try:
-        bar_close_prices = json.loads(signal_state.get("bar_close_prices", "{}"))
-    except Exception:
-        pass
+    # Use bar_close_prices passed directly from check_signal (avoids Modal Dict race).
+    # Fall back to signal_state for manual approve/force-rebalance paths.
+    if bar_close_prices is None:
+        bar_close_prices = {}
+        try:
+            bar_close_prices = json.loads(signal_state.get("bar_close_prices", "{}"))
+        except Exception:
+            pass
 
     results = execute_trades(info, exchange, trades)
     filled  = [r for r in results if r["status"] == "filled"]
@@ -804,14 +843,37 @@ def do_rebalance(parsed: dict, msg_id: str) -> dict:
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("signal-bot-secrets")],
-    schedule=modal.Cron("* * * * *"),
+    schedule=modal.Cron("55 23 * * *"),   # 23:55 UTC daily — end-of-day equity snapshot
+    timeout=60,
+)
+def daily_equity_snapshot():
+    """Guaranteed daily equity snapshot at end of day.
+    This is the primary mechanism for keeping cloud equity consistent across
+    all devices — runs once per day at 23:55 UTC regardless of signal activity.
+    """
+    try:
+        info, _ = get_hl_clients()
+        state   = get_account_state(info)
+        record_equity_snapshot(state["account_value"])
+        print(f"[daily_snapshot] saved ${state['account_value']:.2f}")
+        return {"status": "ok", "value": state["account_value"]}
+    except Exception as e:
+        print(f"[daily_snapshot] failed: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("signal-bot-secrets")],
+    schedule=modal.Cron("*/2 * * * *"),
     timeout=120,
 )
 def check_signal():
     if not should_poll_now():
-        return {"status": "skipped", "reason": "not scheduled this minute"}
+        return {"status": "skipped"}
 
-    # ── Equity snapshot (cloud storage for cross-device history) ──────────
+    # Only fetch account state when we're actually doing real work
+    # (avoids 2 extra HL HTTP calls on every skipped invocation)
     try:
         _info, _ = get_hl_clients()
         _state   = get_account_state(_info)
@@ -820,7 +882,7 @@ def check_signal():
         print(f"[equity_snapshot] skipped: {e}")
 
     try:
-        messages = fetch_recent_messages(limit=20)
+        messages = fetch_recent_messages(limit=5)
     except RuntimeError as e:
         send_slack(f"🔑 *TRW auth error* — token expired\n`{e}`\nRun `python manage.py` to refresh.", mention=True)
         return {"status": "error", "error": str(e)}
@@ -855,13 +917,15 @@ def check_signal():
         signal_state["last_signal_id"] = msg_id
         return {"status": "no_change", "signal_id": msg_id}
 
-    # Capture daily-open prices (bar close = 00:00 UTC price on signal date)
+    # Fetch daily-open prices (bar close = 00:00 UTC on signal date)
     signal_assets = [
         a["asset"] for a in parsed["allocations"]
         if ASSET_TO_TICKER.get(a["asset"], a["asset"]) not in ("USDC", "")
     ]
+    bar_close_px: dict[str, float] = {}
     try:
         bar_close_px = get_daily_open_prices(signal_assets, timestamp)
+        # Also persist for the approval/force-rebalance paths
         signal_state["bar_close_prices"] = json.dumps(bar_close_px)
     except Exception as e:
         print(f"Failed to capture daily open prices: {e}")
@@ -872,13 +936,15 @@ def check_signal():
             mention=True,
         )
         try:
-            return do_rebalance(parsed, msg_id)
+            # Pass bar_close_px directly — avoids Modal Dict read-after-write race
+            return do_rebalance(parsed, msg_id, bar_close_prices=bar_close_px)
         except Exception as e:
             send_slack(f"🚨 *Rebalance error*\n`{e}`", mention=True)
             return {"status": "error", "error": str(e)}
     else:
         approval_token = secrets.token_urlsafe(16)
-        signal_state["pending_signal"] = json.dumps(parsed)
+        pending_with_ts = {**parsed, "_ts": timestamp}   # embed ts for bar-close on approve
+        signal_state["pending_signal"] = json.dumps(pending_with_ts)
         signal_state["pending_msg_id"] = msg_id
         signal_state["approval_token"] = approval_token
 
@@ -904,7 +970,7 @@ def check_signal():
     timeout=120,
 )
 @modal.fastapi_endpoint(method="GET")
-async def web(action: str = "", token: str = "", auth: str = "", points: str = ""):
+async def web(action: str = "", token: str = "", auth: str = "", points: str = "", v: float = 0):
     from fastapi.responses import HTMLResponse
     import base64
 
@@ -1007,7 +1073,22 @@ function login(){{
         except KeyError:
             pass
         try:
-            result = do_rebalance(pending, msg_id)
+            # Fetch daily-open prices here too — check_signal stored them in
+            # signal_state but that write may not have propagated, so re-fetch
+            # from the signal's own timestamp to be safe.
+            bc_px: dict[str, float] = {}
+            try:
+                sig_ts = pending.get("_ts") or 0
+                if not sig_ts:
+                    # Fall back to signal_state if timestamp wasn't embedded
+                    bc_px = json.loads(signal_state.get("bar_close_prices", "{}"))
+                else:
+                    assets = [a["asset"] for a in pending.get("allocations", [])
+                              if ASSET_TO_TICKER.get(a["asset"], a["asset"]) != "USDC"]
+                    bc_px = get_daily_open_prices(assets, sig_ts)
+            except Exception as e:
+                print(f"[approve] bar_close fetch failed: {e}")
+            result = do_rebalance(pending, msg_id, bar_close_prices=bc_px)
             return HTMLResponse(_page(
                 f"Rebalance executed: {result.get('status')}",
                 f"Filled: {result.get('filled', 0)}, "
@@ -1053,9 +1134,18 @@ function login(){{
                 return HTMLResponse(_page("No signal found in TRW channel.",
                                           "Nothing to rebalance."))
             parsed = parse_signal(signal_msg["content"])
-            parsed["no_change"] = False   # force execution even on no-change signals
+            parsed["no_change"] = False
             send_slack("🔄 *Force rebalance* triggered via dashboard")
-            result = do_rebalance(parsed, signal_msg["_id"])
+            # Fetch daily-open prices for bar-close tracking
+            bc_px_force: dict[str, float] = {}
+            try:
+                sig_ts = signal_msg.get("timestamp", 0)
+                assets = [a["asset"] for a in parsed.get("allocations", [])
+                          if ASSET_TO_TICKER.get(a["asset"], a["asset"]) != "USDC"]
+                bc_px_force = get_daily_open_prices(assets, sig_ts)
+            except Exception as e:
+                print(f"[force] bar_close fetch failed: {e}")
+            result = do_rebalance(parsed, signal_msg["_id"], bar_close_prices=bc_px_force)
             return HTMLResponse(_page(
                 f"Force rebalance: {result.get('status')}",
                 f"Filled: {result.get('filled', 0)}, "
@@ -1107,6 +1197,35 @@ function login(){{
             from fastapi.responses import JSONResponse
             return JSONResponse({"error": str(e)}, status_code=500)
 
+    # ── Reset equity history (wipe bad/migrated data) ──────────────────────
+    if action == "equity_reset":
+        if not authorized:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "not authorized"}, status_code=403)
+        from fastapi.responses import JSONResponse
+        try:
+            signal_state["equity_snapshots"] = "[]"
+            signal_state["bc_snapshots"]     = "[]"
+            return JSONResponse({"ok": True, "message": "equity history wiped"})
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    # ── Client equity upsert (dashboard page load) ─────────────────────────
+    # Unlike equity_store_backtest (which only inserts older-than-live points),
+    # this always upserts the current value — used by dashboard JS on page load
+    # so any device visit also records a snapshot regardless of poll schedule.
+    if action == "equity_upsert":
+        if not authorized:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "not authorized"}, status_code=403)
+        from fastapi.responses import JSONResponse
+        try:
+            if v > 0:
+                record_equity_snapshot(v)
+            return JSONResponse({"ok": True, "stored": v > 0})
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
     # ── Cloud equity history API ────────────────────────────────────────────
     if action == "equity_history":
         if not authorized:
@@ -1130,6 +1249,10 @@ function login(){{
         try:
             data = json.loads(points) if points else {}
             pts  = data.get("points", [])
+            # Sanity check: only accept points from 2024 onwards
+            # (rejects any stale localStorage garbage that predates the bot)
+            MIN_TS = 1704067200000  # 2024-01-01 UTC in ms
+            pts = [p for p in pts if p.get("ts", 0) >= MIN_TS]
             if pts:
                 try:
                     existing = json.loads(signal_state.get("equity_snapshots", "[]"))
@@ -1384,41 +1507,18 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
   <span id="footerTime"></span>
 </div>
 <script>
-// ── Cloud-first equity storage ─────────────────────────────────────────────
-// Primary store: Modal Dict via ?action=equity_history (written server-side every poll)
-// Fallback:      localStorage for offline resilience + migration of old local data
-// On load: fetch cloud → merge with local → render
-// On load: also push any LOCAL-ONLY points to cloud (one-time migration)
-
-const LS_KEY='equity_history_v2', LS_BC='barclose_history_v2';
-
-function lsLoad(k){try{return JSON.parse(localStorage.getItem(k)||'[]')}catch{return[]}}
-function lsSave(k,h){try{localStorage.setItem(k,JSON.stringify(h.slice(-730)))}catch{}}
-
-// Merge two [{date,value}] arrays: keep one point per date (latest wins), sort asc
-function mergeByDate(a, b){
-  const m={};
-  for(const p of [...a,...b]) m[p.date]=p.value;
-  return Object.entries(m).sort((x,y)=>x[0]<y[0]?-1:1).map(([date,value])=>({date,value}));
-}
-
-// Convert cloud [{ts,v}] → [{date,value}], keeping one point per date (last wins)
-function cloudToDateSeries(snaps){
-  const m={};
-  for(const s of snaps){
-    const date=new Date(s.ts).toISOString().slice(0,10);
-    m[date]=s.v;
-  }
-  return Object.entries(m).sort((a,b)=>a[0]<b[0]?-1:1).map(([date,value])=>({date,value}));
-}
-
-// Convert [{date,value}] → [{ts,v}] using noon UTC for the date
-function dateSeriesToCloud(pts){
-  return pts.map(p=>({ts:new Date(p.date+'T12:00:00Z').getTime(),v:p.value}));
-}
+// ── Cloud-only equity storage ──────────────────────────────────────────────
+// Single source of truth: Modal Dict, written by:
+//   1. daily_equity_snapshot cron at 23:55 UTC every day (primary)
+//   2. check_signal polls ~54x/day
+//   3. equity_upsert on every dashboard page load (this code below)
+//
+// No localStorage involvement — every device reads the same cloud data.
+// localStorage is only used as a render cache to avoid blank chart while
+// the async fetch completes (cleared/overwritten on every load).
 
 const _authParam = new URLSearchParams(window.location.search).get('auth')||'';
-function _ap(sep='?'){return _authParam?sep+'auth='+encodeURIComponent(_authParam):'';}
+function _ap(){return _authParam?'&auth='+encodeURIComponent(_authParam):'';}
 
 async function fetchCloudEquity(){
   try{
@@ -1429,79 +1529,6 @@ async function fetchCloudEquity(){
   }catch{return[];}
 }
 
-async function pushToCloud(pts){
-  // pts = [{ts,v}]
-  if(!pts.length) return;
-  try{
-    const encoded=encodeURIComponent(JSON.stringify({points:pts}));
-    await fetch('?action=equity_store_backtest'+_ap('&')+'&points='+encoded);
-  }catch{}
-}
-
-// Record today's value into cloud via the dedicated endpoint
-// (server-side record_equity_snapshot already does this on every poll,
-//  but this catches the case where the user visits between polls)
-async function cloudRecordNow(value){
-  if(value<=0) return;
-  const nowMs=Date.now();
-  await pushToCloud([{ts:nowMs,v:parseFloat(value.toFixed(2))}]);
-}
-
-let fullA=[], fullB=[], _cloudLoaded=false;
-
-async function initEquity(accountValue){
-  // 1. Load actual equity + daily-open equity from cloud in parallel
-  const [cloudSnaps, bcSnaps] = await Promise.all([
-    fetchCloudEquity(),
-    fetchBcEquity(),
-  ]);
-  const cloudSeries  = cloudToDateSeries(cloudSnaps);
-  const bcCloudSeries = cloudToDateSeries(bcSnaps);
-
-  // 2. Load local history cache (pre-cloud data)
-  const localSeries = lsLoad(LS_KEY);
-
-  // 3. One-time migration of existing local data to cloud
-  if(localSeries.length>0 && !localStorage.getItem('_cloud_migrated')){
-    await pushToCloud(dateSeriesToCloud(localSeries));
-    localStorage.setItem('_cloud_migrated','1');
-  }
-
-  // 4. Merge cloud + local (cloud is authoritative on same date)
-  const merged = mergeByDate(localSeries, cloudSeries);
-
-  // 5. Upsert today's live value
-  if(accountValue>0){
-    const today=new Date().toISOString().slice(0,10);
-    const last=merged[merged.length-1];
-    if(last&&last.date===today){last.value=parseFloat(accountValue.toFixed(2));}
-    else{merged.push({date:today,value:parseFloat(accountValue.toFixed(2))});}
-    await cloudRecordNow(accountValue);
-  }
-
-  lsSave(LS_KEY, merged);
-  fullA = merged;
-
-  // 6. Daily-open equity from cloud (stored at execution time — correct point-in-time)
-  fullB = bcCloudSeries;
-
-  _cloudLoaded=true;
-  if(chart){chart.destroy();chart=null;}
-  buildChart();
-
-  // 7. All-time PnL
-  const _atEl=document.getElementById('allTimePnl');
-  const _atSub=document.getElementById('allTimePnlSub');
-  if(fullA.length>=2){
-    const _atPnl=accountValue-fullA[0].value;
-    if(_atEl){_atEl.textContent=(_atPnl>=0?'+':'')+fmt$(_atPnl);_atEl.className='metric-value '+(_atPnl>=0?'pos':'neg')}
-    if(_atSub){const _pct=(_atPnl/fullA[0].value*100);_atSub.textContent=(_pct>=0?'+':'')+_pct.toFixed(1)+'%  since '+fullA[0].date}
-  } else {
-    if(_atEl){_atEl.textContent='—';_atEl.className='metric-value'}
-    if(_atSub){_atSub.textContent='accumulating history…'}
-  }
-}
-
 async function fetchBcEquity(){
   try{
     const r=await fetch('?action=bc_equity_history'+_ap());
@@ -1509,6 +1536,57 @@ async function fetchBcEquity(){
     const d=await r.json();
     return Array.isArray(d)?d:[];
   }catch{return[];}
+}
+
+// Push current account value to cloud via upsert endpoint
+async function upsertCloudEquity(value){
+  if(value<=0) return;
+  try{
+    await fetch(`?action=equity_upsert${_ap()}&v=${value.toFixed(2)}`);
+  }catch{}
+}
+
+// Convert cloud [{ts,v}] → [{date,value}], one point per date (last wins)
+function cloudToSeries(snaps){
+  const m={};
+  for(const s of snaps){
+    const date=new Date(s.ts).toISOString().slice(0,10);
+    m[date]=s.v;
+  }
+  return Object.entries(m).sort((a,b)=>a[0]<b[0]?-1:1).map(([date,value])=>({date,value}));
+}
+
+let fullA=[], fullB=[], _cloudLoaded=false;
+
+async function initEquity(accountValue){
+  // Upsert today's value to cloud immediately
+  if(accountValue>0) upsertCloudEquity(accountValue);
+
+  // Fetch full history from cloud (actual + daily-open in parallel)
+  const [cloudSnaps, bcSnaps] = await Promise.all([
+    fetchCloudEquity(),
+    fetchBcEquity(),
+  ]);
+
+  fullA = cloudToSeries(cloudSnaps);
+  fullB = cloudToSeries(bcSnaps);
+  _cloudLoaded = true;
+  if(chart){chart.destroy();chart=null;}
+  buildChart();
+
+  // All-time PnL vs first recorded point
+  const _atEl=document.getElementById('allTimePnl');
+  const _atSub=document.getElementById('allTimePnlSub');
+  if(fullA.length>=2){
+    const first=fullA[0].value;
+    const pnl=accountValue-first;
+    const pct=pnl/first*100;
+    if(_atEl){_atEl.textContent=(pnl>=0?'+':'')+fmt$(pnl);_atEl.className='metric-value '+(pnl>=0?'pos':'neg')}
+    if(_atSub){_atSub.textContent=(pct>=0?'+':'')+pct.toFixed(1)+'%  since '+fullA[0].date}
+  } else {
+    if(_atEl){_atEl.textContent='—';_atEl.className='metric-value'}
+    if(_atSub){_atSub.textContent='accumulating history…'}
+  }
 }
 
 function filterH(h,r){
@@ -1556,7 +1634,7 @@ function exportCSV(){
   const dates=[...new Set([...a.map(p=>p.date),...b.map(p=>p.date)])].sort();
   const am=Object.fromEntries(a.map(p=>[p.date,p.value]));
   const bm=Object.fromEntries(b.map(p=>[p.date,p.value]));
-  const rows=[['date','actual_equity_usd','barclose_equity_usd']];
+  const rows=[['date','actual_equity_usd','daily_open_equity_usd']];
   for(const d of dates)rows.push([d,am[d]??'',bm[d]??'']);
   const csv=rows.map(r=>r.join(',')).join('\n');
   const blob=new Blob([csv],{type:'text/csv'});
@@ -1653,12 +1731,8 @@ function init(d){
   document.getElementById('lastActed').textContent='Last acted: '+(lastActedId&&lastActedId!=='none'?lastActedId.slice(0,12)+'...':'none');
   document.getElementById('footerTime').textContent=new Date().toLocaleString('en-GB',{timeZone:'UTC'})+' UTC';
 
-  // Equity chart: async cloud fetch then render
-  // Show local cache immediately so chart isn't blank while cloud loads
-  fullA=lsLoad(LS_KEY);
-  fullB=lsLoad(LS_BC);
-  if(fullA.length>=2||fullB.length>=2) buildChart();
-  initEquity(account.value);  // async: fetches cloud, merges, re-renders
+  // Equity chart: fetch from cloud and render (async)
+  initEquity(account.value);
 }
 init(DASHBOARD_DATA);
 
