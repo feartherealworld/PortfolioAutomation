@@ -11,6 +11,7 @@ from signalbot.notify import *
 from signalbot.trw import *
 from signalbot.hyperliquid import *
 from signalbot.strategies import *
+from signalbot.safety import *
 
 __all__ = [
     'is_autonomous_hours',
@@ -66,6 +67,14 @@ def do_rebalance(parsed: dict, msg_id: str,
     Passed directly from check_signal to avoid Modal Dict read-after-write
     race conditions.
     """
+    # Kill switch — hard gate before any HL interaction. Covers every caller
+    # (autonomous check_signal, manual approve, force rebalance).
+    if is_trading_halted():
+        reason = get_halt_state().get("reason") or "kill switch engaged"
+        send_slack(f"🛑 *Trading halted* — rebalance refused.\nReason: {reason}\n"
+                   f"Resume from the dashboard to re-enable execution.", mention=True)
+        return {"status": "halted", "reason": reason}
+
     info, exchange = get_hl_clients()
     state         = get_account_state(info)
     account_value = state["account_value"]

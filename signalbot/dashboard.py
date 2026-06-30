@@ -92,6 +92,8 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
   .badge-manual{background:rgba(245,166,35,.15);color:var(--amber);border:1px solid rgba(245,166,35,.25)}
   .main{padding:16px 20px;max-width:1200px}
   .pending-banner{border:1px solid rgba(245,166,35,.35);background:rgba(245,166,35,.06);border-radius:8px;padding:16px;margin-bottom:16px}
+  .halt-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid rgba(255,92,92,.5);background:rgba(255,92,92,.1);border-radius:8px;padding:14px 16px;margin-bottom:16px;font-family:var(--font-display);font-weight:600;color:var(--red);font-size:14px}
+  .halt-banner .reason{font-family:var(--font-mono);font-weight:400;font-size:12px;color:var(--muted)}
   .pending-label{font-family:var(--font-display);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--amber);margin-bottom:8px}
   .pending-allocs{font-size:13px;color:var(--text);display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px}
   .pending-actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -214,6 +216,11 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
   <div class="header-badges" id="badges"></div>
 </div>
 <div class="main">
+  <div class="halt-banner" id="haltBanner" style="display:none">
+    <span>🛑 TRADING HALTED — no signals will execute.</span>
+    <span class="reason" id="haltReason"></span>
+    <a class="btn btn-approve" id="resumeBtn" href="?action=resume" style="margin-left:auto" onclick="return confirm('Resume trading? Auto-execution will re-enable.')">Resume trading</a>
+  </div>
   <div class="pending-banner" id="pendingBanner" style="display:none">
     <div class="pending-label">Approval required</div>
     <div class="pending-allocs" id="pendingAllocs"></div>
@@ -267,6 +274,7 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
     <a href="?action=health" class="btn">Health check</a>
     <a href="?" class="btn" id="refreshBtn">Refresh</a>
     <button class="btn" onclick="toggleLeverage()">⚙ Leverage</button>
+    <a href="?action=halt" class="btn btn-danger" id="killBtn" onclick="return confirm('Halt ALL trading? No signals will execute until you resume.')" style="margin-left:auto">🛑 Halt trading</a>
   </div>
 
   <!-- Leverage settings panel -->
@@ -527,8 +535,15 @@ function toggleDust(btn){
   renderPositions();
 }
 function init(d){
-  const{account,positions,signal,pending,lastActedId,trwOk,hlOk,isAuto,approvalToken}=d;
-  document.getElementById('badges').innerHTML=`<span class="badge ${trwOk?'badge-ok':'badge-err'}">TRW ${trwOk?'OK':'ERR'}</span><span class="badge ${hlOk?'badge-ok':'badge-err'}">HL ${hlOk?'OK':'ERR'}</span><span class="badge ${isAuto?'badge-auto':'badge-manual'}" title="${isAuto?'Autonomous 00:00–05:00 UK':'Approval required 05:00–00:00 UK'}">${isAuto?'Auto 00–05':'Approval'}</span>`;
+  const{account,positions,signal,pending,lastActedId,trwOk,hlOk,isAuto,approvalToken,halt}=d;
+  const halted=halt&&halt.halted;
+  document.getElementById('haltBanner').style.display=halted?'flex':'none';
+  document.getElementById('killBtn').style.display=halted?'none':'';
+  if(halted){
+    const since=halt.ts?new Date(halt.ts).toLocaleString('en-GB',{timeZone:'UTC'})+' UTC':'';
+    document.getElementById('haltReason').textContent=(halt.reason?halt.reason+' · ':'')+(since?'since '+since:'');
+  }
+  document.getElementById('badges').innerHTML=`<span class="badge ${trwOk?'badge-ok':'badge-err'}">TRW ${trwOk?'OK':'ERR'}</span><span class="badge ${hlOk?'badge-ok':'badge-err'}">HL ${hlOk?'OK':'ERR'}</span>`+(halted?`<span class="badge badge-err">🛑 HALTED</span>`:`<span class="badge ${isAuto?'badge-auto':'badge-manual'}" title="${isAuto?'Autonomous 00:00–05:00 UK':'Approval required 05:00–00:00 UK'}">${isAuto?'Auto 00–05':'Approval'}</span>`);
   const tp=positions.reduce((s,p)=>s+p.pnl,0);
   document.getElementById('accountValue').textContent=fmt$(account.value);
   document.getElementById('totalPnl').textContent=(tp>=0?'+':'')+fmt$(tp);
@@ -760,10 +775,20 @@ def _render_dashboard(dash_state: dict | None = None) -> str:
             ],
         }
 
+    halt = {"halted": False, "reason": "", "ts": 0}
+    try:
+        h = json.loads(ds.get("halt") or "")
+        if isinstance(h, dict):
+            halt = {"halted": bool(h.get("halted")), "reason": h.get("reason", ""),
+                    "ts": h.get("ts", 0)}
+    except Exception:
+        pass
+
     dashboard_data = {
         "trwOk":            trw_ok,
         "hlOk":             hl_ok,
         "isAuto":           is_autonomous_hours(),
+        "halt":             halt,
         "account":          {"value": state.get("account_value", 0)},
         "positions":        positions_js,
         "signal":           signal_js,

@@ -14,6 +14,7 @@ from signalbot.hyperliquid import *
 from signalbot.strategies import *
 from signalbot.rebalance import *
 from signalbot.dashboard import *
+from signalbot.safety import *
 
 __all__ = [
     'daily_equity_snapshot',
@@ -92,6 +93,13 @@ def check_signal():
 
     if msg_id == last_acted_id:
         return {"status": "already_acted", "signal_id": msg_id}
+
+    # Kill switch — skip auto-execution quietly. Do NOT mark the signal as acted,
+    # so the latest signal is picked up automatically once trading is resumed.
+    # No Slack here (avoids spam every poll); the dashboard shows the HALTED state.
+    if is_trading_halted():
+        print(f"[check_signal] trading halted — holding signal {msg_id} (not executed)")
+        return {"status": "halted", "signal_id": msg_id}
 
     parsed    = parse_signal(signal_msg["content"])
     timestamp = signal_msg.get("timestamp", 0)
@@ -461,6 +469,23 @@ function login(){{
             return HTMLResponse(_page(f"Error: {e}",
                                        "Check Modal logs for details."),
                                 status_code=500)
+
+    # ── Kill switch (halt / resume) ────────────────────────────────────────
+    if action in ("halt", "resume"):
+        if not authorized:
+            return HTMLResponse(
+                _page("Not authorised.", "Log in first."), status_code=403)
+        halted = (action == "halt")
+        state  = {"halted": halted,
+                  "reason": "manual kill switch" if halted else "",
+                  "ts": int(time.time() * 1000)}
+        await signal_state.__setitem__.aio("trading_halted", json.dumps(state))
+        if halted:
+            send_slack("🛑 *Trading HALTED* via dashboard kill switch.\n"
+                       "No signals will execute until resumed.", mention=True)
+        else:
+            send_slack("✅ *Trading RESUMED* via dashboard. Auto-execution re-enabled.")
+        return _dash_redirect(auth)
 
     # ── Health ─────────────────────────────────────────────────────────────
     if action == "health":
@@ -840,5 +865,6 @@ function login(){{
         "approval_token":   await signal_state.get.aio("approval_token",   ""),
         "last_signal_id":   await signal_state.get.aio("last_signal_id",   "none"),
         "leverage_settings": await signal_state.get.aio("leverage_settings", "{}"),
+        "halt":             await signal_state.get.aio("trading_halted",    ""),
     }
     return HTMLResponse(_render_dashboard(dash_state))
