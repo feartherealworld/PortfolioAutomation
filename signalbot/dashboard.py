@@ -1476,11 +1476,9 @@ async function runBacktest() {
     renderTable();
     document.getElementById('exportBtn').disabled=false;
     setStatus('ok',`${timeline.length} signals · ${eqSeries[0]?.date||'?'} → ${eqSeries[eqSeries.length-1]?.date||'?'}`);
-    // Push backtest points to cloud storage (fills in pre-deployment history)
-    await pushBacktestToCloud(timeline);
-    // Reload cloud snaps to show updated banner
-    await loadCloudEquity();
-    renderChart();  // re-render with merged view updated
+    // History is backtest-only — results stay in this tab and are NOT persisted
+    // to the live equity/portfolio snapshots (which the RSPS + WealthOS dashboards
+    // read). Pushing backtest curves into cloud storage previously polluted them.
   },250);
 }
 

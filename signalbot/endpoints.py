@@ -600,33 +600,13 @@ function login(){{
             from fastapi.responses import JSONResponse
             return JSONResponse([], status_code=200)
 
-    # ── Store backtest result in cloud (called by JS after backtest) ────────
+    # ── (Disabled) Store backtest result in cloud ──────────────────────────
+    # History is backtest-only. This used to merge backtest equity into the live
+    # equity_snapshots (polluting the RSPS + WealthOS dashboards). Kept as an
+    # explicit no-op so any cached/old History page can't write live data.
     if action == "equity_store_backtest":
-        if not authorized:
-            from fastapi.responses import JSONResponse
-            return JSONResponse({"error": "not authorized"}, status_code=403)
         from fastapi.responses import JSONResponse
-        try:
-            data = json.loads(points) if points else {}
-            pts  = data.get("points", [])
-            # Sanity check: only accept points from 2024 onwards
-            # (rejects any stale localStorage garbage that predates the bot)
-            MIN_TS = 1704067200000  # 2024-01-01 UTC in ms
-            pts = [p for p in pts if p.get("ts", 0) >= MIN_TS]
-            if pts:
-                try:
-                    existing = json.loads(await signal_state.get.aio("equity_snapshots", "[]"))
-                except Exception:
-                    existing = []
-                earliest_live = existing[0]["ts"] if existing else float("inf")
-                bt_points = [p for p in pts if p["ts"] < earliest_live]
-                merged = bt_points + existing
-                merged.sort(key=lambda p: p["ts"])
-                merged = merged[-3650:]
-                await signal_state.__setitem__.aio("equity_snapshots", json.dumps(merged))
-            return JSONResponse({"ok": True, "stored": len(pts)})
-        except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"ok": True, "stored": 0, "disabled": True})
 
     # ── Bar-close equity history API ────────────────────────────────────────
     if action == "bc_equity_history":
