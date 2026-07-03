@@ -442,6 +442,15 @@ function renderPositions(){
       }
     }
 
+    // Funding (perps only): hourly rate annualized; longs pay positive funding
+    let fundStr = '';
+    if (p.mode === 'perp' && typeof p.funding === 'number') {
+      const apr    = p.funding * 24 * 365 * 100;
+      const paying = (p.size >= 0 ? p.funding > 0 : p.funding < 0);
+      const col    = paying ? 'var(--red)' : 'var(--accent)';
+      fundStr = `<div style="font-size:10px;color:${col};margin-top:2px" title="current funding rate, annualized">${paying?'paying':'earning'} ${Math.abs(apr).toFixed(1)}% APR funding</div>`;
+    }
+
     // PnL: dollar + percent
     const costBasis = p.entryPx > 0 ? parseFloat(p.size) * p.entryPx : p.value - p.pnl;
     const pnlPct    = costBasis > 0 ? (p.pnl / costBasis) * 100 : 0;
@@ -450,7 +459,7 @@ function renderPositions(){
 
     return`<tr>
       <td><span class="coin-badge"><span class="coin-dot" style="background:${dc[i%dc.length]}"></span>${p.coin}</span></td>
-      <td class="hide-mobile">${modeTag}${liqStr}</td>
+      <td class="hide-mobile">${modeTag}${liqStr}${fundStr}</td>
       <td class="hide-mobile">${sizeCell}</td>
       <td class="hide-mobile" style="font-size:12px">${entryMark}</td>
       <td style="color:${p.value<DUST_USD?'var(--muted)':'inherit'}">${fmt$(p.value)}</td>
@@ -465,7 +474,7 @@ function toggleDust(btn){
   renderPositions();
 }
 function init(d){
-  const{account,positions,signal,pending,lastActedId,trwOk,hlOk,isAuto,approvalToken,halt}=d;
+  const{account,positions,signal,pending,lastActedId,trwOk,hlOk,slackOk,isAuto,approvalToken,halt}=d;
   const halted=halt&&halt.halted;
   document.getElementById('haltBanner').style.display=halted?'flex':'none';
   document.getElementById('killBtn').style.display=halted?'none':'';
@@ -473,7 +482,7 @@ function init(d){
     const since=halt.ts?new Date(halt.ts).toLocaleString('en-GB',{timeZone:'UTC'})+' UTC':'';
     document.getElementById('haltReason').textContent=(halt.reason?halt.reason+' · ':'')+(since?'since '+since:'');
   }
-  document.getElementById('badges').innerHTML=`<span class="badge ${trwOk?'badge-ok':'badge-err'}">TRW ${trwOk?'OK':'ERR'}</span><span class="badge ${hlOk?'badge-ok':'badge-err'}">HL ${hlOk?'OK':'ERR'}</span>`+(halted?`<span class="badge badge-err">🛑 HALTED</span>`:`<span class="badge ${isAuto?'badge-auto':'badge-manual'}" title="${isAuto?'Autonomous 00:00–05:00 UK':'Approval required 05:00–00:00 UK'}">${isAuto?'Auto 00–05':'Approval'}</span>`);
+  document.getElementById('badges').innerHTML=`<span class="badge ${trwOk?'badge-ok':'badge-err'}">TRW ${trwOk?'OK':'ERR'}</span><span class="badge ${hlOk?'badge-ok':'badge-err'}">HL ${hlOk?'OK':'ERR'}</span><span class="badge ${slackOk?'badge-ok':'badge-manual'}" title="${slackOk?'Slack webhook configured':'Slack webhook not set (optional)'}">SLACK ${slackOk?'OK':'—'}</span>`+(halted?`<span class="badge badge-err">🛑 HALTED</span>`:`<span class="badge ${isAuto?'badge-auto':'badge-manual'}" title="${isAuto?'Autonomous 00:00–05:00 UK':'Approval required 05:00–00:00 UK'}">${isAuto?'Auto 00–05':'Approval'}</span>`);
   const tp=positions.reduce((s,p)=>s+p.pnl,0);
   document.getElementById('accountValue').textContent=fmt$(account.value);
   document.getElementById('totalPnl').textContent=(tp>=0?'+':'')+fmt$(tp);
@@ -641,6 +650,25 @@ if (_footer) {
 </html>"""
 
 
+def _perp_funding_rates() -> dict[str, float]:
+    """Current hourly funding rate per perp coin (HL public API, read-only).
+    Display-only: failures return {} and the dashboard omits funding info."""
+    import requests as req
+    try:
+        resp = req.post("https://api.hyperliquid.xyz/info",
+                        json={"type": "metaAndAssetCtxs"}, timeout=10)
+        meta, ctxs = resp.json()
+        out: dict[str, float] = {}
+        for asset, ctx in zip(meta.get("universe", []), ctxs):
+            f = ctx.get("funding")
+            if f is not None:
+                out[asset["name"]] = float(f)
+        return out
+    except Exception as e:
+        print(f"[funding] fetch failed: {e}")
+        return {}
+
+
 def _render_dashboard(dash_state: dict | None = None) -> str:
     """Build dashboard HTML with live data + bar close equity injected as JSON."""
     ds = dash_state or {}
@@ -698,6 +726,14 @@ def _render_dashboard(dash_state: dict | None = None) -> str:
         for coin, pos in state.get("positions", {}).items()
     ]
 
+    # Funding info for open perp positions (PAXG and any leveraged asset pays
+    # or earns funding hourly — invisible until now)
+    if any(p["mode"] == "perp" for p in positions_js):
+        rates = _perp_funding_rates()
+        for p in positions_js:
+            if p["mode"] == "perp" and p["coin"] in rates:
+                p["funding"] = rates[p["coin"]]
+
     signal_js = None
     if parsed and parsed.get("allocations"):
         signal_js = {
@@ -720,6 +756,7 @@ def _render_dashboard(dash_state: dict | None = None) -> str:
     dashboard_data = {
         "trwOk":            trw_ok,
         "hlOk":             hl_ok,
+        "slackOk":          bool(os.environ.get("SLACK_WEBHOOK_URL", "")),
         "isAuto":           is_autonomous_hours(),
         "halt":             halt,
         "account":          {"value": state.get("account_value", 0)},
