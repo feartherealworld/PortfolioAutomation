@@ -307,7 +307,7 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
 // Single source of truth: Modal Dict, written by:
 //   1. daily_equity_snapshot cron at 23:55 UTC every day (primary)
 //   2. check_signal polls ~54x/day
-//   3. equity_upsert on every dashboard page load (this code below)
+//   3. server-side on every dashboard page render (_render_dashboard)
 //
 // No localStorage involvement — every device reads the same cloud data.
 // localStorage is only used as a render cache to avoid blank chart while
@@ -334,14 +334,6 @@ async function fetchBcEquity(){
   }catch{return[];}
 }
 
-// Push current account value to cloud via upsert endpoint
-async function upsertCloudEquity(value){
-  if(value<=0) return;
-  try{
-    await fetch(`?action=equity_upsert${_ap()}&v=${value.toFixed(2)}`);
-  }catch{}
-}
-
 // Convert cloud [{ts,v}] → [{date,value}], one point per date (last wins)
 function cloudToSeries(snaps){
   const m={};
@@ -355,9 +347,6 @@ function cloudToSeries(snaps){
 let fullA=[], fullB=[], _cloudLoaded=false;
 
 async function initEquity(accountValue){
-  // Upsert today's value to cloud immediately
-  if(accountValue>0) upsertCloudEquity(accountValue);
-
   // Fetch full history from cloud (actual + daily-open in parallel)
   const [cloudSnaps, bcSnaps] = await Promise.all([
     fetchCloudEquity(),
@@ -734,6 +723,9 @@ def _render_dashboard(dash_state: dict | None = None) -> str:
         info, _ = get_hl_clients()
         state   = get_account_state(info)
         hl_ok   = True
+        # Record the snapshot server-side (replaces the old equity_upsert
+        # round-trip where the client echoed this value back to the server).
+        record_equity_snapshot(state.get("account_value", 0))
     except Exception as e:
         import traceback
         print(f"[dashboard] HL error:\n{traceback.format_exc()}")

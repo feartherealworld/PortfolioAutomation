@@ -1,0 +1,7 @@
+# Local development / test dependencies (prod deps live in requirements.txt;
+# the Modal image installs its own set in signalbot/config.py)
+-r requirements.txt
+pytest
+fastapi
+httpx
+python-multipart

@@ -15,6 +15,7 @@ from signalbot.strategies import *
 from signalbot.rebalance import *
 from signalbot.dashboard import *
 from signalbot.safety import *
+from signalbot.auth import *
 
 __all__ = [
     'daily_equity_snapshot',
@@ -223,10 +224,11 @@ async def tv_webhook(request: Request):
     if not token or not action:
         return JSONResponse({"error": "missing token or action"}, status_code=400)
 
-    # Match strategy by secret token (constant-time-ish; tokens are unguessable).
+    # Match strategy by secret token (constant-time compare).
     strats = json.loads(await signal_state.get.aio("strategies", "[]"))
     strat  = next((s for s in strats
-                   if s.get("kind") == "signal" and s.get("token") == token), None)
+                   if s.get("kind") == "signal"
+                   and hmac.compare_digest(str(s.get("token") or ""), token)), None)
     if strat is None:
         return JSONResponse({"error": "unauthorized"}, status_code=401)
 
@@ -277,37 +279,12 @@ async def tv_webhook(request: Request):
 
 # ── Web endpoint ──────────────────────────────────────────────────────────────
 
-@app.function(
-    image=image,
-    secrets=[modal.Secret.from_name("signal-bot-secrets")],
-    timeout=120,
-)
-@modal.fastapi_endpoint(method="GET")
-async def web(action: str = "", token: str = "", auth: str = "", points: str = "", v: float = 0):
-    from fastapi.responses import HTMLResponse
-    import base64
-
-    # ── Auth ──────────────────────────────────────────────────────────────────
-    expected_user = os.environ.get("DASHBOARD_USERNAME", "")
-    expected_pass = os.environ.get("DASHBOARD_PASSWORD", "")
-
-    authorized = True   # default: open if no creds configured
-    if expected_user and expected_pass:
-        authorized = False
-        if auth:
-            try:
-                from urllib.parse import unquote
-                decoded  = base64.b64decode(
-                    unquote(auth) + "==").decode("utf-8")
-                username, password = decoded.split(":", 1)
-                authorized = (username.strip() == expected_user.strip()
-                              and password.strip() == expected_pass.strip())
-            except Exception as e:
-                print(f"Auth decode error: {e}")
-
-        if not authorized:
-            show_error = "true" if (auth and not authorized) else "false"
-            login_html = f"""<!DOCTYPE html>
+def _login_page(next_q: str = "", error: bool = False) -> str:
+    """Login form. POSTs credentials to /login; `next_q` (a "?..." query string)
+    brings the user back to the page they wanted — e.g. a Slack approve link."""
+    err_div  = '<div class="err">Invalid credentials</div>' if error else ""
+    next_esc = _html_escape(next_q)
+    return f"""<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Signal Bot — Login</title>
@@ -332,27 +309,76 @@ async def web(action: str = "", token: str = "", auth: str = "", points: str = "
   button:hover{{background:rgba(200,245,99,0.2)}}
   .err{{color:#ff5c5c;font-size:12px;margin-bottom:12px}}
 </style></head><body>
-<div class="box">
+<form class="box" method="POST" action="/login">
   <div class="logo">signal<span>bot</span></div>
-  <div class="err" id="err"
-       style="display:{{"block" if show_error=="true" else "none"}}">
-    Invalid credentials</div>
+  {err_div}
+  <input type="hidden" name="next" value="{next_esc}">
   <label>Username</label>
-  <input type="text" id="u" autofocus>
+  <input type="text" name="username" autofocus autocomplete="username">
   <label>Password</label>
-  <input type="password" id="p" onkeydown="if(event.key==='Enter')login()">
-  <button onclick="login()">Sign in</button>
-</div>
-<script>
-function login(){{
-  const u=document.getElementById('u').value.trim();
-  const p=document.getElementById('p').value;
-  if(!u||!p)return;
-  const encoded=btoa(unescape(encodeURIComponent(u+':'+p)));
-  window.location.href='?auth='+encoded;
-}}
-</script></body></html>"""
-            return HTMLResponse(login_html)
+  <input type="password" name="password" autocomplete="current-password">
+  <button type="submit">Sign in</button>
+</form>
+</body></html>"""
+
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("signal-bot-secrets")],
+    timeout=120,
+)
+@modal.asgi_app()
+def web():
+    """Dashboard app on the same URL as before (app `signal-bot`, function
+    `web`). Was a single GET fastapi_endpoint with credentials base64-encoded
+    in the ?auth= query param (leaked via logs/history/referrers); now an ASGI
+    app with POST /login setting an HttpOnly session cookie. Query-param
+    routing (?action=...) is unchanged."""
+    from fastapi import FastAPI, Request
+    from fastapi.responses import HTMLResponse, RedirectResponse
+
+    api = FastAPI()
+
+    @api.post("/login")
+    async def login(request: Request):
+        try:
+            form     = await request.form()
+            username = str(form.get("username", ""))
+            password = str(form.get("password", ""))
+            next_q   = str(form.get("next", ""))
+        except Exception:
+            username, password, next_q = "", "", ""
+        if not next_q.startswith("?"):
+            next_q = ""          # only same-page query strings — no open redirect
+        if not verify_credentials(username, password):
+            return HTMLResponse(_login_page(next_q, error=True), status_code=401)
+        resp = RedirectResponse("/" + next_q, status_code=303)
+        resp.set_cookie(SESSION_COOKIE, create_session(),
+                        max_age=SESSION_TTL_MS // 1000, path="/",
+                        httponly=True, secure=True, samesite="lax")
+        return resp
+
+    @api.get("/")
+    async def index(request: Request, action: str = "", token: str = "",
+                    auth: str = "", points: str = "", v: float = 0):
+        # `auth` is accepted-and-ignored so old bookmarked ?auth= URLs and the
+        # auth-propagating JS in cached pages keep working (cookie decides).
+        return await _web_handler(request, action, token, points, v)
+
+    return api
+
+
+async def _web_handler(request, action: str, token: str, points: str, v: float):
+    from fastapi.responses import HTMLResponse
+
+    # ── Auth: session cookie (set by POST /login) ─────────────────────────────
+    authorized = True   # default: open if no creds configured
+    auth = ""           # renderers embed this in links; empty → cookie carries auth
+    if auth_configured():
+        authorized = check_session(request.cookies.get(SESSION_COOKIE, ""))
+        if not authorized:
+            q = str(request.url.query or "")
+            return HTMLResponse(_login_page(f"?{q}" if q else ""))
 
     # ── Helper: auth-preserving redirect back to dashboard ─────────────────
     def _dash_redirect(auth_token: str) -> HTMLResponse:
@@ -570,21 +596,14 @@ function login(){{
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
 
-    # ── Client equity upsert (dashboard page load) ─────────────────────────
-    # Unlike equity_store_backtest (which only inserts older-than-live points),
-    # this always upserts the current value — used by dashboard JS on page load
-    # so any device visit also records a snapshot regardless of poll schedule.
+    # ── (Deprecated) client equity upsert ──────────────────────────────────
+    # The dashboard used to POST back its own server-rendered account value,
+    # meaning any authorized client could write arbitrary equity history.
+    # Snapshots are now recorded server-side in _render_dashboard; this stays
+    # as a no-op so cached pages don't 404.
     if action == "equity_upsert":
-        if not authorized:
-            from fastapi.responses import JSONResponse
-            return JSONResponse({"error": "not authorized"}, status_code=403)
         from fastapi.responses import JSONResponse
-        try:
-            if v > 0:
-                record_equity_snapshot(v)
-            return JSONResponse({"ok": True, "stored": v > 0})
-        except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"ok": True, "stored": False, "deprecated": True})
 
     # ── Cloud equity history API ────────────────────────────────────────────
     if action == "equity_history":

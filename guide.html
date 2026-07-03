@@ -301,22 +301,14 @@ cd trw</code></pre>
 
 <p>Run these tests to confirm everything is wired up correctly before leaving it to run overnight.</p>
 
-<h3>Test 1 — Signal reader</h3>
-<pre><code>python trw_signal_reader.py</code></pre>
-<p>Should show the latest signal with allocations.</p>
+<h3>Test 1 — Connections (TRW, Hyperliquid, Slack)</h3>
+<pre><code>python manage.py</code></pre>
+<p>The manager page shows a live connection status check for every service.</p>
 
-<h3>Test 2 — Hyperliquid connection</h3>
-<pre><code>python hyperliquid_rebalancer.py --status</code></pre>
-<p>Should show your account value and positions.</p>
-
-<h3>Test 3 — Preview trades (no execution)</h3>
-<pre><code>python hyperliquid_rebalancer.py --preview-live</code></pre>
-<p>Shows what trades WOULD be made without executing them.</p>
-
-<h3>Test 4 — Dashboard</h3>
+<h3>Test 2 — Dashboard</h3>
 <p>Open your dashboard URL. Log in with your credentials. You should see your positions and the latest signal.</p>
 
-<h3>Test 5 — Slack</h3>
+<h3>Test 3 — Slack</h3>
 <pre><code>python -c "
 import os, requests
 from dotenv import load_dotenv

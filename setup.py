@@ -366,8 +366,7 @@ def print_deploy_success():
     print("  00:00-05:00 — trades automatically")
     print("  05:00-00:00 — sends you a notification to approve")
     print()
-    print("  To test: python trw_signal_reader.py")
-    print("  To check positions: python hyperliquid_rebalancer.py --status")
+    print("  To check connections: python manage.py")
 
 
 def reconfigure():

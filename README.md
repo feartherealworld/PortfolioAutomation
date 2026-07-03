@@ -72,11 +72,11 @@ The manager shows your exact URL after first deploy. Features:
 
 | File | What it does |
 |---|---|
-| `manage.py` | **Start here** — GUI for setup and token management |
-| `modal_signal_bot.py` | Cloud bot (Modal cron + web dashboard) |
-| `trw_signal_reader.py` | Reads and parses signals from TRW |
-| `hyperliquid_rebalancer.py` | Manages Hyperliquid positions |
+| `manage.py` | **Start here** — GUI for setup, token management, and connection checks |
+| `modal_signal_bot.py` | Deploy entry point (`modal deploy modal_signal_bot.py`) |
+| `signalbot/` | The bot itself — signal reading, rebalancing, dashboard, strategies |
 | `setup.py` | CLI alternative to manage.py |
+| `slack_tests.py` | Fire test notifications at your Slack webhook |
 | `guide.html` | Full setup guide |
 
 ## Security
