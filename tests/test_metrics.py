@@ -80,3 +80,57 @@ def test_merge_equity_into_portfolio():
     assert len(merged) == 2
     assert merged[0]["v"] == 100.0     # backfilled from equity
     assert merged[1]["v"] == 999.0     # portfolio wins the shared hour
+
+
+# ── Risk metrics (_risk_metrics via compute_portfolio_metrics) ───────────────
+
+def _snaps_from_daily(values):
+    """One snapshot per day at 12:00 UTC from a list of NAVs."""
+    return [{"ts": T0 + i * DAY, "v": float(v)} for i, v in enumerate(values)]
+
+
+def test_risk_metrics_basic_shape():
+    from signalbot.strategies import _market_index, _risk_metrics
+    snaps = _snaps_from_daily([100, 110, 99, 105, 112, 108])
+    mkt = _market_index(snaps, [])
+    r = _risk_metrics(*mkt)
+    assert r["vol_annual"] > 0
+    assert r["sharpe"] is not None
+    assert r["sortino"] is not None
+    assert r["best_day"]["r"] == 0.1          # 100 → 110
+    assert abs(r["worst_day"]["r"] - (99 / 110 - 1)) < 1e-9
+    assert abs(r["max_drawdown"] - (99 / 110 - 1)) < 1e-9
+    assert r["cagr"] is not None and r["cagr"] > 0
+
+
+def test_risk_metrics_flow_adjusted():
+    """A deposit must not register as a gain in the risk stats."""
+    from signalbot.strategies import _market_index, _risk_metrics
+    snaps = _snaps_from_daily([100, 100, 100])
+    snaps[1]["v"] = 200.0                      # NAV jump from a deposit...
+    snaps[2]["v"] = 200.0
+    flows = [{"ts": snaps[1]["ts"] - 1000, "amount": 100.0}]
+    r = _risk_metrics(*_market_index(snaps, flows))
+    assert r["best_day"]["r"] < 0.01           # index flat — no phantom +100%
+    assert r["max_drawdown"] == 0.0
+
+
+def test_risk_metrics_insufficient_history():
+    from signalbot.strategies import _market_index, _risk_metrics
+    snaps = _snaps_from_daily([100, 105])
+    r = _risk_metrics(*_market_index(snaps, []))
+    assert r["sharpe"] is None and r["vol_annual"] is None
+    assert r["max_drawdown"] is not None       # dd still computable
+
+
+def test_metrics_include_risk_block():
+    snaps = _snaps_from_daily([100, 110, 99, 105])
+    flows = [{"ts": T0 - DAY, "amount": 100.0}]
+    m = compute_portfolio_metrics(snaps, flows, 105.0)
+    assert "risk" in m
+    assert m["risk"]["max_drawdown"] is not None
+
+
+def test_metrics_risk_block_empty_history():
+    m = compute_portfolio_metrics([], [], 0.0)
+    assert m["risk"]["sharpe"] is None

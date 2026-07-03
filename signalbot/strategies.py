@@ -20,6 +20,7 @@ __all__ = [
     '_xnpv',
     '_xirr',
     '_market_index',
+    '_risk_metrics',
     'compute_portfolio_metrics',
     'get_signal_strategies',
     'get_signal_runtime',
@@ -277,6 +278,73 @@ def _market_index(snapshots: list[dict], flows: list[dict]) -> tuple[list[dict],
     return snaps, cum_idx
 
 
+def _risk_metrics(snaps: list[dict], cum_idx: list[float]) -> dict:
+    """
+    Risk statistics from the flow-adjusted market index (so deposits and
+    withdrawals never register as gains/losses). Daily resolution: the index
+    is resampled to one point per UTC day (last wins), returns are computed
+    between days, and stats are annualized with √365 (crypto trades 24/7).
+    Returns None values when there isn't enough history (< 3 daily points).
+      sharpe / sortino : rf = 0; sortino uses RMS of downside returns
+      vol_annual       : σ(daily) × √365
+      max_drawdown     : worst peak-to-trough of the index (all points, ≤ 0)
+      best_day / worst_day : {"ts", "r"} extremes of daily returns
+      cagr             : annualized growth of the full index span
+    """
+    out = {"sharpe": None, "sortino": None, "vol_annual": None,
+           "max_drawdown": None, "best_day": None, "worst_day": None,
+           "cagr": None}
+    if not snaps or len(snaps) != len(cum_idx):
+        return out
+
+    # Max drawdown over every index point (not just daily closes)
+    peak, max_dd = cum_idx[0], 0.0
+    for x in cum_idx:
+        peak = max(peak, x)
+        if peak > 0:
+            max_dd = min(max_dd, x / peak - 1.0)
+    out["max_drawdown"] = round(max_dd, 6)
+
+    # Resample to daily closes: last index value per UTC day
+    daily: dict[int, tuple[int, float]] = {}
+    for s, x in zip(snaps, cum_idx):
+        daily[s["ts"] // 86_400_000] = (s["ts"], x)
+    days = sorted(daily)
+    if len(days) < 3:
+        return out
+
+    rets: list[tuple[int, float]] = []
+    for prev, cur in zip(days, days[1:]):
+        prev_x, (ts, cur_x) = daily[prev][1], daily[cur]
+        if prev_x > 0:
+            rets.append((ts, cur_x / prev_x - 1.0))
+    if len(rets) < 2:
+        return out
+
+    rs     = [r for _, r in rets]
+    n      = len(rs)
+    mean   = sum(rs) / n
+    var    = sum((r - mean) ** 2 for r in rs) / (n - 1)
+    sd     = var ** 0.5
+    dn_rms = (sum(min(r, 0.0) ** 2 for r in rs) / n) ** 0.5
+
+    out["vol_annual"] = round(sd * (365.0 ** 0.5), 6)
+    if sd > 1e-12:
+        out["sharpe"] = round(mean / sd * (365.0 ** 0.5), 4)
+    if dn_rms > 1e-12:
+        out["sortino"] = round(mean / dn_rms * (365.0 ** 0.5), 4)
+
+    best  = max(rets, key=lambda t: t[1])
+    worst = min(rets, key=lambda t: t[1])
+    out["best_day"]  = {"ts": best[0],  "r": round(best[1], 6)}
+    out["worst_day"] = {"ts": worst[0], "r": round(worst[1], 6)}
+
+    span_days = (snaps[-1]["ts"] - snaps[0]["ts"]) / 86_400_000.0
+    if span_days >= 1 and cum_idx[0] > 0 and cum_idx[-1] > 0:
+        out["cagr"] = round((cum_idx[-1] / cum_idx[0]) ** (365.0 / span_days) - 1.0, 6)
+    return out
+
+
 def compute_portfolio_metrics(snapshots: list[dict], flows: list[dict],
                               current_value: float) -> dict:
     """
@@ -288,6 +356,8 @@ def compute_portfolio_metrics(snapshots: list[dict], flows: list[dict],
       xirr          : date-aware money-weighted annualized return (all flows + NAV)
       injections    : per-deposit money-weighted contribution & return, based on
                       the actual market path from that deposit's date to now
+      risk          : Sharpe/Sortino/vol/max-drawdown/best/worst day (see
+                      _risk_metrics), flow-adjusted so deposits aren't "gains"
     """
     net_deposited = sum(f["amount"] for f in flows)
     true_pnl      = current_value - net_deposited
@@ -356,6 +426,8 @@ def compute_portfolio_metrics(snapshots: list[dict], flows: list[dict],
         "xirr":          xirr,
         "injections":    injections,
         "flow_count":    len(flows),
+        "risk":          (_risk_metrics(*mkt) if mkt is not None
+                          else _risk_metrics([], [])),
     }
 
 

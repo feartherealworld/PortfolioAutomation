@@ -186,6 +186,10 @@ __NAV_PLACEHOLDER__
     <div class="metric"><div class="metric-label">Total Deposited</div><div class="metric-value" id="mDeposited">—</div><div class="metric-sub" id="mFlowCount">—</div></div>
     <div class="metric"><div class="metric-label">Money Made</div><div class="metric-value" id="mPnl">—</div><div class="metric-sub">excl. deposits</div></div>
     <div class="metric"><div class="metric-label">Strategies</div><div class="metric-value" id="mStrats">—</div><div class="metric-sub">active</div></div>
+    <div class="metric"><div class="metric-label">Sharpe</div><div class="metric-value" id="mSharpe">—</div><div class="metric-sub" id="mSortino">sortino —</div></div>
+    <div class="metric"><div class="metric-label">Volatility</div><div class="metric-value" id="mVol">—</div><div class="metric-sub">annualized</div></div>
+    <div class="metric"><div class="metric-label">Max Drawdown</div><div class="metric-value" id="mMaxDd">—</div><div class="metric-sub">flow-adjusted, peak to trough</div></div>
+    <div class="metric"><div class="metric-label">Best / Worst Day</div><div class="metric-value" id="mBestDay">—</div><div class="metric-sub" id="mWorstDay">—</div></div>
   </div>
 
   <div class="panel">
@@ -195,6 +199,12 @@ __NAV_PLACEHOLDER__
         <div class="ctrl-group" id="seriesTabs">
           <button class="ctrl-btn active" onclick="setSeries('value',this)">Value</button>
           <button class="ctrl-btn" onclick="setSeries('deposited',this)">vs Deposited</button>
+          <button class="ctrl-btn" onclick="setSeries('perf',this)">Performance</button>
+          <button class="ctrl-btn" onclick="setSeries('drawdown',this)">Drawdown</button>
+        </div>
+        <div class="ctrl-group" id="benchTabs" style="display:none">
+          <button class="ctrl-btn" id="benchBTC" onclick="toggleBench('BTC',this)">vs BTC</button>
+          <button class="ctrl-btn" id="benchETH" onclick="toggleBench('ETH',this)">vs ETH</button>
         </div>
         <div class="ctrl-group" id="rangeTabs">
           <button class="ctrl-btn" onclick="setRange('30d',this)">30d</button>
@@ -308,6 +318,20 @@ function render(){
   const activeStrats = _data.strategies.filter(s=>s.status==='active').length;
   document.getElementById('mStrats').textContent = activeStrats;
 
+  // Risk tiles (flow-adjusted daily stats; null until ~3 days of history)
+  const rk = m.risk||{};
+  const dayFmt = ts=>new Date(ts).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  document.getElementById('mSharpe').textContent = rk.sharpe!=null ? rk.sharpe.toFixed(2) : '—';
+  document.getElementById('mSortino').textContent = 'sortino '+(rk.sortino!=null ? rk.sortino.toFixed(2) : '—');
+  document.getElementById('mVol').textContent = rk.vol_annual!=null ? (rk.vol_annual*100).toFixed(1)+'%' : '—';
+  const ddEl = document.getElementById('mMaxDd');
+  ddEl.textContent = rk.max_drawdown!=null ? (rk.max_drawdown*100).toFixed(1)+'%' : '—';
+  if(rk.max_drawdown!=null && rk.max_drawdown<0) ddEl.className='metric-value neg';
+  const bEl = document.getElementById('mBestDay');
+  if(rk.best_day){ bEl.textContent=fmtPct(rk.best_day.r); bEl.className='metric-value pos'; }
+  document.getElementById('mWorstDay').textContent =
+    rk.worst_day ? 'worst '+fmtPct(rk.worst_day.r)+' ('+dayFmt(rk.worst_day.ts)+')' : '—';
+
   renderChart();
   renderStrategies();
   renderFlows();
@@ -330,6 +354,7 @@ function dailyDownsample(arr){
 }
 
 function renderChart(){
+  if(currentSeries==='perf'||currentSeries==='drawdown'){renderIndexChart();return}
   const snaps = dailyDownsample(filterRange(_data.snapshots||[]));
   const noH=document.getElementById('noHistory'), wrap=document.getElementById('chartWrap');
   if(snaps.length<2){noH.style.display='block';wrap.style.display='none';return}
@@ -385,7 +410,99 @@ function renderChart(){
   });
 }
 
-function setSeries(s,el){currentSeries=s;document.querySelectorAll('#seriesTabs .ctrl-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderChart()}
+// ── Performance / Drawdown modes — flow-adjusted TWR index ──────────────────
+// The server sends index_series (chain-linked Modified-Dietz index), so
+// deposits/withdrawals never show up as performance. Benchmarks are HL daily
+// closes normalized to 100 at the first visible day — same basis as the index.
+let _bench=null, _benchOn={BTC:false,ETH:false};
+
+async function fetchBench(){
+  if(_bench) return _bench;
+  const s=_data.index_series||[];
+  try{
+    const payload=encodeURIComponent(JSON.stringify({start:s.length?s[0].ts:0}));
+    const r=await fetch(`?action=benchmark_data${_ap()}&points=${payload}`);
+    if(r.ok) _bench=await r.json();
+  }catch(e){console.error('benchmark fetch failed',e)}
+  return _bench||{BTC:[],ETH:[]};
+}
+
+function _baseOpts(yTick,tooltip){
+  return {
+    responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},tooltip:{
+      backgroundColor:'#1a1a1a',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,
+      titleColor:'#666',bodyColor:'#f0ede8',titleFont:{family:'DM Mono',size:11},bodyFont:{family:'DM Mono',size:12},
+      callbacks:{label:tooltip}
+    }},
+    scales:{
+      x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#555',font:{family:'DM Mono',size:11},maxTicksLimit:8},border:{display:false}},
+      y:{position:'right',grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#555',font:{family:'DM Mono',size:11},callback:yTick},border:{display:false}}
+    }
+  };
+}
+
+async function renderIndexChart(){
+  const idxAll = dailyDownsample(_data.index_series||[]);
+  const noH=document.getElementById('noHistory'), wrap=document.getElementById('chartWrap');
+  const idx = filterRange(idxAll);
+  if(idx.length<2){noH.style.display='block';wrap.style.display='none';return}
+  noH.style.display='none';wrap.style.display='block';
+  const labels = idx.map(s=>new Date(s.ts).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:idx.length>200?'2-digit':undefined}));
+  const mySeries=currentSeries;   // guard against mode switch during async fetch
+  let datasets=[], legend='', yTick, tip;
+
+  if(currentSeries==='drawdown'){
+    // Underwater curve: running peak over FULL history, windowed for display
+    let peak=0; const dd=new Map();
+    for(const p of idxAll){ peak=Math.max(peak,p.v); dd.set(p.ts, peak>0?(p.v/peak-1)*100:0); }
+    datasets=[{label:'Drawdown',data:idx.map(p=>dd.get(p.ts)??0),
+      borderColor:'#ff5c5c',backgroundColor:'rgba(255,92,92,0.10)',
+      borderWidth:2,pointRadius:0,pointHoverRadius:4,fill:'origin',tension:0.2}];
+    legend='<div class="legend-item"><div class="legend-dot" style="background:#ff5c5c"></div>Drawdown from peak (flow-adjusted)</div>';
+    yTick=v=>v.toFixed(0)+'%'; tip=ctx=>' '+ctx.parsed.y.toFixed(2)+'%';
+  }else{
+    const base=idx[0].v;
+    datasets=[{label:'Portfolio',data:idx.map(p=>p.v/base*100),
+      borderColor:'#c8f563',backgroundColor:'rgba(200,245,99,0.06)',
+      borderWidth:2,pointRadius:0,pointHoverRadius:4,fill:false,tension:0.3}];
+    legend='<div class="legend-item"><div class="legend-dot" style="background:#c8f563"></div>Portfolio (TWR, start=100)</div>';
+    const bcol={BTC:'#f7931a',ETH:'#627eea'};
+    if(_benchOn.BTC||_benchOn.ETH){
+      const bench=await fetchBench();
+      if(currentSeries!==mySeries) return;
+      for(const coin of ['BTC','ETH']){
+        if(!_benchOn[coin]) continue;
+        const closes=bench[coin]||[];
+        if(!closes.length) continue;
+        const byDay=new Map(closes.map(c=>[Math.floor(c.ts/86400000),c.c]));
+        let b0=null;
+        const data=idx.map(p=>{
+          const c=byDay.get(Math.floor(p.ts/86400000));
+          if(c==null) return null;
+          if(b0===null) b0=c;
+          return c/b0*100;
+        });
+        datasets.push({label:coin+' hold',data,
+          borderColor:bcol[coin],borderWidth:1.5,borderDash:[5,4],
+          pointRadius:0,pointHoverRadius:3,fill:false,tension:0.2,spanGaps:true});
+        legend+='<div class="legend-item"><div class="legend-dot" style="background:'+bcol[coin]+'"></div>'+coin+' hold</div>';
+      }
+    }
+    yTick=v=>v.toFixed(0); tip=ctx=>' '+ctx.dataset.label+': '+(ctx.parsed.y??0).toFixed(1);
+  }
+  document.getElementById('chartLegend').innerHTML=legend;
+  if(chart){chart.destroy();chart=null}
+  chart=new Chart(document.getElementById('portfolioChart'),{type:'line',data:{labels,datasets},options:_baseOpts(yTick,tip)});
+}
+
+function toggleBench(coin,el){
+  _benchOn[coin]=!_benchOn[coin];
+  el.classList.toggle('active',_benchOn[coin]);
+  renderChart();
+}
+
+function setSeries(s,el){currentSeries=s;document.querySelectorAll('#seriesTabs .ctrl-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');document.getElementById('benchTabs').style.display=(s==='perf')?'':'none';renderChart()}
 function setRange(r,el){currentRange=r;document.querySelectorAll('#rangeTabs .ctrl-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderChart()}
 
 const STRAT_COLORS={rsps:'#c8f563',sdca:'#5b9cf6',delta:'#c084fc',yield:'#f5a623',cfd:'#ff5c5c'};

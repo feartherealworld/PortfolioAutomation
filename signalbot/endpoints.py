@@ -699,12 +699,47 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
                        if not (s.get("kind") == "signal" and s.get("mode") == "paper")]
             live    = v if v > 0 else (snaps[-1]["v"] if snaps else 0)
             metrics = compute_portfolio_metrics(snaps, flows, live)
+            # Flow-adjusted TWR index series — powers the Performance and
+            # Drawdown chart modes (deposits never show up as gains there).
+            index_series = []
+            mkt = _market_index(snaps, flows)
+            if mkt is not None:
+                index_series = [{"ts": s["ts"], "v": round(ix, 6)}
+                                for s, ix in zip(*mkt)]
             return JSONResponse({
-                "snapshots":  snaps,
-                "flows":      flows,
-                "strategies": strats,
-                "metrics":    metrics,
+                "snapshots":    snaps,
+                "flows":        flows,
+                "strategies":   strats,
+                "metrics":      metrics,
+                "index_series": index_series,
             })
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    # ── Benchmark closes (BTC/ETH daily) for the Performance overlay ────────
+    # Read-only public-data fetch from HL; `points` = {"start": unix_ms}.
+    if action == "benchmark_data":
+        if not authorized:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "not authorized"}, status_code=403)
+        from fastapi.responses import JSONResponse
+        try:
+            data  = json.loads(points) if points else {}
+            end   = int(time.time() * 1000)
+            start = int(data.get("start", 0))
+            if start <= 0 or start >= end:
+                start = end - 365 * 86_400_000
+            info = HlInfo()
+            out: dict = {}
+            for coin in ("BTC", "ETH"):
+                try:
+                    candles = info.candle_snapshot(coin, "1d", start, end)
+                    out[coin] = [{"ts": int(c["t"]), "c": float(c["c"])}
+                                 for c in (candles or [])]
+                except Exception as e:
+                    print(f"[benchmark] {coin} fetch failed: {e}")
+                    out[coin] = []
+            return JSONResponse(out)
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
 
