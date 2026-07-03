@@ -368,6 +368,18 @@ def web():
     return api
 
 
+async def _halt_state_async() -> dict:
+    """Kill-switch state, async read (for the nav banner on non-RSPS tabs)."""
+    try:
+        raw = await signal_state.get.aio(HALT_KEY, "")
+        d = json.loads(raw) if raw else {}
+        if isinstance(d, dict):
+            return {"halted": bool(d.get("halted")), "reason": str(d.get("reason", ""))}
+    except Exception:
+        pass
+    return {"halted": False, "reason": ""}
+
+
 async def _web_handler(request, action: str, token: str, points: str, v: float):
     from fastapi.responses import HTMLResponse
 
@@ -541,7 +553,7 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
 
     # ── History tab ────────────────────────────────────────────────────────
     if action == "history":
-        return HTMLResponse(_render_history(auth))
+        return HTMLResponse(_render_history(auth, halt=await _halt_state_async()))
 
     # ── History signals API (called by JS in history tab) ──────────────────
     if action == "history_signals":
@@ -668,7 +680,8 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
                     print(f"[portfolio] backfilled {len(merged) - len(port)} snapshots from equity")
         except Exception as e:
             print(f"[portfolio] backfill failed: {e}")
-        return HTMLResponse(_render_portfolio(auth, live_value))
+        return HTMLResponse(_render_portfolio(auth, live_value,
+                                              halt=await _halt_state_async()))
 
     if action == "portfolio_data":
         if not authorized:
@@ -753,7 +766,7 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
 
     # ── Signal Strategies tab ───────────────────────────────────────────────
     if action == "strategies":
-        return HTMLResponse(_render_strategies(auth))
+        return HTMLResponse(_render_strategies(auth, halt=await _halt_state_async()))
 
     if action == "strategies_data":
         if not authorized:

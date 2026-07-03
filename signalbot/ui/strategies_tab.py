@@ -15,11 +15,12 @@ from signalbot.ui.shared import *
 __all__ = ['_render_strategies', '_STRATEGIES_HTML']
 
 
-def _render_strategies(auth: str = "") -> str:
+def _render_strategies(auth: str = "", halt: dict | None = None) -> str:
     """Build the Signal Strategies tab — TradingView-fed external strategies."""
     auth_param = f"&auth={auth}" if auth else ""
     html = _STRATEGIES_HTML
     html = html.replace("__AUTH_PARAM_PLACEHOLDER__", auth_param)
+    html = html.replace("__NAV_PLACEHOLDER__", _nav_html("strategies", halt))
     return html
 
 
@@ -106,19 +107,7 @@ _STRATEGIES_HTML = r"""<!DOCTYPE html>
 </head>
 <body>
 
-<div class="header">
-  <div class="header-left">
-    <div class="logo">wealth<span>os</span></div>
-    <div class="tab-nav">
-      <a class="tab-btn" id="portfolioTab" href="?action=portfolio__AUTH_PARAM_PLACEHOLDER__">Portfolio</a>
-      <a class="tab-btn" id="rspsTab" href="?__AUTH_PARAM_PLACEHOLDER__">RSPS</a>
-      <a class="tab-btn" id="histTab" href="?action=history__AUTH_PARAM_PLACEHOLDER__">History</a>
-      <a class="tab-btn active" href="#">Strategies</a>
-    </div>
-  </div>
-</div>
-
-<div class="main">
+__NAV_PLACEHOLDER__
 
   <div class="panel">
     <div class="panel-header"><div class="panel-title">TradingView Signal Strategies</div></div>

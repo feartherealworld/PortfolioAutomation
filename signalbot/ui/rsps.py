@@ -155,19 +155,7 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
 </style>
 </head>
 <body>
-<div class="header">
-  <div class="header-left">
-    <div class="pulse-dot"></div>
-    <div class="logo">signal<span>bot</span></div>
-    <div class="tab-nav">
-      <a class="tab-btn" id="portfolioTab" href="?action=portfolio">Portfolio</a>
-      <a class="tab-btn active" id="dashTab" href="?">RSPS</a>
-    <a class="tab-btn" id="histTab" href="?action=history">History</a>
-    <a class="tab-btn" id="stratTab" href="?action=strategies">Strategies</a>
-    </div>
-  </div>
-  <div class="header-badges" id="badges"></div>
-</div>
+__NAV_PLACEHOLDER__
 <div class="main">
   <div class="halt-banner" id="haltBanner" style="display:none">
     <span>🛑 TRADING HALTED — no signals will execute.</span>
@@ -744,7 +732,12 @@ def _render_dashboard(dash_state: dict | None = None) -> str:
     }
 
     data_json = json.dumps(dashboard_data)
-    return _DASHBOARD_HTML.replace(
-        "init(DASHBOARD_DATA);",
-        f"const DASHBOARD_DATA = {data_json};\ninit(DASHBOARD_DATA);"
+    nav = _nav_html(
+        "rsps", None, main_open=False,   # RSPS keeps its own halt banner (resume button)
+        left_extra='<div class="pulse-dot"></div>\n    ',
+        right_extra='<div class="header-badges" id="badges"></div>',
     )
+    return (_DASHBOARD_HTML
+            .replace("__NAV_PLACEHOLDER__", nav)
+            .replace("init(DASHBOARD_DATA);",
+                     f"const DASHBOARD_DATA = {data_json};\ninit(DASHBOARD_DATA);"))

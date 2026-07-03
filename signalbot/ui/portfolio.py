@@ -15,12 +15,14 @@ from signalbot.ui.shared import *
 __all__ = ['_render_portfolio', '_PORTFOLIO_HTML']
 
 
-def _render_portfolio(auth: str = "", live_value: float = 0.0) -> str:
+def _render_portfolio(auth: str = "", live_value: float = 0.0,
+                      halt: dict | None = None) -> str:
     """Build the Portfolio tab — main wealth overview across all strategies."""
     auth_param = f"&auth={auth}" if auth else ""
     html = _PORTFOLIO_HTML
     html = html.replace("__AUTH_PARAM_PLACEHOLDER__", auth_param)
     html = html.replace("__LIVE_VALUE_PLACEHOLDER__", str(live_value))
+    html = html.replace("__NAV_PLACEHOLDER__", _nav_html("portfolio", halt))
     return html
 
 
@@ -150,19 +152,7 @@ _PORTFOLIO_HTML = r"""<!DOCTYPE html>
 </head>
 <body>
 
-<div class="header">
-  <div class="header-left">
-    <div class="logo">wealth<span>os</span></div>
-    <div class="tab-nav">
-      <a class="tab-btn active" href="#">Portfolio</a>
-      <a class="tab-btn" id="rspsTab" href="?__AUTH_PARAM_PLACEHOLDER__">RSPS</a>
-      <a class="tab-btn" id="histTab" href="?action=history__AUTH_PARAM_PLACEHOLDER__">History</a>
-      <a class="tab-btn" id="stratTab" href="?action=strategies__AUTH_PARAM_PLACEHOLDER__">Strategies</a>
-    </div>
-  </div>
-</div>
-
-<div class="main">
+__NAV_PLACEHOLDER__
 
   <div class="hero">
     <div class="hero-label">Total Portfolio Value</div>

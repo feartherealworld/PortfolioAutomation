@@ -72,7 +72,7 @@ def _fetch_history_signals(limit: int = 600) -> list[dict]:
     return signals
 
 
-def _render_history(auth: str = "") -> str:
+def _render_history(auth: str = "", halt: dict | None = None) -> str:
     """Build the History tab HTML with auth token injected."""
     token = os.environ.get("TRW_SESSION_TOKEN", "")
     auth_param = f"&auth={auth}" if auth else ""
@@ -80,6 +80,7 @@ def _render_history(auth: str = "") -> str:
     # Inject session token so JS can call Binance/CoinGecko directly
     html = html.replace("__TRW_TOKEN_PLACEHOLDER__", token)
     html = html.replace("__AUTH_PARAM_PLACEHOLDER__", auth_param)
+    html = html.replace("__NAV_PLACEHOLDER__", _nav_html("history", halt))
     return html
 
 
@@ -239,19 +240,7 @@ _HISTORY_HTML = r"""<!DOCTYPE html>
   <div class="loading-sub" id="loadingSub"></div>
 </div>
 
-<div class="header">
-  <div class="header-left">
-    <div class="logo">signal<span>bot</span></div>
-    <div class="tab-nav">
-      <a class="tab-btn" id="portfolioTab" href="?action=portfolio__AUTH_PARAM_PLACEHOLDER__">Portfolio</a>
-      <a class="tab-btn" id="dashTab" href="?__AUTH_PARAM_PLACEHOLDER__">RSPS</a>
-      <a class="tab-btn active" href="#">History</a>
-      <a class="tab-btn" id="stratTab" href="?action=strategies__AUTH_PARAM_PLACEHOLDER__">Strategies</a>
-    </div>
-  </div>
-</div>
-
-<div class="main">
+__NAV_PLACEHOLDER__
 
   <!-- Cloud equity status banner -->
   <div class="cloud-banner" id="cloudBanner" style="display:none">
