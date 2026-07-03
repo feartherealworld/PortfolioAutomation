@@ -13,7 +13,7 @@ from signalbot.trw import *
 from signalbot.hyperliquid import *
 from signalbot.strategies import *
 from signalbot.rebalance import *
-from signalbot.dashboard import *
+from signalbot.ui import *
 from signalbot.safety import *
 from signalbot.auth import *
 

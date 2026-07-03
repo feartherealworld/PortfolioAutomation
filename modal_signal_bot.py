@@ -14,7 +14,8 @@ Package layout:
     signalbot/hyperliquid.py  HlInfo, account state, rebalance compute + execute
     signalbot/strategies.py   paper engine, portfolio metrics, snapshots, registry
     signalbot/rebalance.py    do_rebalance + scheduling helpers
-    signalbot/dashboard.py    HTML constants + renderers
+    signalbot/auth.py         dashboard sessions (login cookie)
+    signalbot/ui/             dashboard HTML + renderers, one module per tab
     signalbot/endpoints.py    web + tv_webhook + cron functions (@app.function)
 """
 from signalbot.config import app, image  # noqa: F401  (app is the Modal deploy target)
