@@ -20,6 +20,7 @@ def _render_portfolio(auth: str = "", live_value: float = 0.0,
     """Build the Portfolio tab — main wealth overview across all strategies."""
     auth_param = f"&auth={auth}" if auth else ""
     html = _PORTFOLIO_HTML
+    html = html.replace("__THEME_HEAD__", _theme_head())
     html = html.replace("__AUTH_PARAM_PLACEHOLDER__", auth_param)
     html = html.replace("__LIVE_VALUE_PLACEHOLDER__", str(live_value))
     html = html.replace("__NAV_PLACEHOLDER__", _nav_html("portfolio", halt))
@@ -39,115 +40,94 @@ _PORTFOLIO_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Portfolio</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+__THEME_HEAD__
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap');
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  :root{
-    --bg:#0a0a0a;--surface:#111111;--surface2:#1a1a1a;--surface3:#222222;
-    --border:rgba(255,255,255,0.08);--border2:rgba(255,255,255,0.14);
-    --text:#f0ede8;--muted:#6b6860;--muted2:#3e3c3a;
-    --accent:#c8f563;--accent-dim:rgba(200,245,99,0.12);
-    --red:#ff5c5c;--red-dim:rgba(255,92,92,0.12);
-    --blue:#5b9cf6;--blue-dim:rgba(91,156,246,0.12);
-    --amber:#f5a623;--amber-dim:rgba(245,166,35,0.12);
-    --purple:#c084fc;--purple-dim:rgba(192,132,252,0.12);
-    --font-mono:'DM Mono',monospace;--font-display:'Syne',sans-serif
-  }
-  body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;line-height:1.6;min-height:100vh}
-  .header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:20;gap:10px;flex-wrap:wrap}
-  .header-left{display:flex;align-items:center;gap:12px;min-width:0}
-  .logo{font-family:var(--font-display);font-size:15px;font-weight:800;letter-spacing:-0.02em;white-space:nowrap}
-  .logo span{color:var(--accent)}
-  .tab-nav{display:flex;gap:1px;background:var(--border);border-radius:5px;overflow:hidden;padding:1px}
-  .tab-btn{font-size:11px;font-family:var(--font-mono);letter-spacing:.06em;text-transform:uppercase;padding:5px 12px;border-radius:4px;cursor:pointer;color:var(--muted);border:none;background:none;transition:all .15s;white-space:nowrap;text-decoration:none;display:inline-block}
-  .tab-btn.active{background:var(--surface2);color:var(--text)}
-  .tab-btn:hover:not(.active){color:var(--text)}
-  .main{padding:16px 20px;max-width:1200px;margin:0 auto}
+  /* ── Hero ── */
+  .hero{position:relative;padding:22px 0 32px}
+  .hero::before{content:'';position:absolute;left:-6%;top:-45%;width:460px;height:300px;border-radius:50%;
+    background:radial-gradient(closest-side,rgba(200,245,99,.11),transparent);filter:blur(34px);
+    pointer-events:none;animation:wosBreath 6s ease-in-out infinite}
+  .hero-label{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  .hero-value{font-family:var(--font-display);font-size:62px;font-weight:800;letter-spacing:-.03em;line-height:1;
+    background:linear-gradient(100deg,#f4f1ea 32%,var(--accent) 47%,var(--accent2) 53%,#f4f1ea 68%);
+    background-size:240% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:wosShimmer 8s linear infinite}
+  .hero-sub{display:flex;gap:28px;margin-top:18px;flex-wrap:wrap}
+  .hero-stat{display:flex;flex-direction:column;gap:2px}
+  .hero-stat-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .hero-stat-val{font-family:var(--font-display);font-size:18px;font-weight:700}
 
-  /* Hero value */
-  .hero{padding:8px 0 24px}
-  .hero-label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
-  .hero-value{font-family:var(--font-display);font-size:52px;font-weight:800;letter-spacing:-0.03em;line-height:1}
-  .hero-sub{display:flex;gap:18px;margin-top:12px;flex-wrap:wrap;font-size:13px}
-  .hero-stat{display:flex;flex-direction:column;gap:1px}
-  .hero-stat-label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-  .hero-stat-val{font-family:var(--font-display);font-size:17px;font-weight:700}
-  .pos{color:var(--accent)}.neg{color:var(--red)}
+  /* ── Metric tiles ── */
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+  .metric{position:relative;background:var(--glass);border:1px solid var(--border);border-radius:14px;padding:16px 18px;
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    box-shadow:0 14px 34px -16px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);
+    transition:transform .3s var(--ease),border-color .3s,box-shadow .3s}
+  .metric:hover{transform:translateY(-3px);border-color:rgba(200,245,99,.28);
+    box-shadow:0 20px 42px -16px rgba(0,0,0,.7),0 0 26px -8px rgba(200,245,99,.16)}
+  .metric-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+  .metric-value{font-family:var(--font-display);font-size:21px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+  .metric-sub{font-size:11px;color:var(--muted);margin-top:4px}
 
-  /* Metric cards */
-  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px}
-  .metric{background:var(--surface);padding:14px 16px}
-  .metric-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
-  .metric-value{font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-0.02em;line-height:1}
-  .metric-sub{font-size:11px;color:var(--muted);margin-top:3px}
-
-  /* Chart */
-  .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;overflow:hidden}
-  .panel-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px}
-  .panel-title{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500}
+  /* ── Chart ── */
   .chart-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-  .ctrl-group{display:flex;gap:2px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px}
-  .ctrl-btn{font-size:11px;font-family:var(--font-mono);padding:4px 9px;border-radius:3px;cursor:pointer;color:var(--muted);border:none;background:none;transition:all .15s;letter-spacing:.04em;white-space:nowrap}
-  .ctrl-btn.active{background:var(--surface2);color:var(--text)}
-  .ctrl-btn:hover:not(.active){color:var(--text)}
-  .chart-body{padding:14px}
+  .chart-body{padding:16px}
   .chart-legend{display:flex;gap:14px;margin-bottom:10px;flex-wrap:wrap}
-  .legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
-  .legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-  .chart-wrap{position:relative;width:100%;height:300px}
-  .empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:12px}
+  .legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+  .legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px currentColor}
+  .chart-wrap{position:relative;width:100%;height:310px}
 
-  /* Strategy allocation bars */
-  .strat-grid{padding:14px;display:flex;flex-direction:column;gap:14px}
-  .strat-row{display:flex;flex-direction:column;gap:6px}
+  /* ── Strategy allocation ── */
+  .strat-grid{padding:16px;display:flex;flex-direction:column;gap:16px}
+  .strat-row{display:flex;flex-direction:column;gap:7px}
   .strat-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
   .strat-name{font-family:var(--font-display);font-weight:700;font-size:14px}
   .strat-desc{font-size:11px;color:var(--muted)}
-  .strat-pct{font-family:var(--font-display);font-weight:700;font-size:16px}
-  .strat-pct-input{width:74px;text-align:right;background:var(--surface2);border:1px solid var(--border2);border-radius:5px;color:var(--text);font-family:var(--font-display);font-weight:700;font-size:15px;padding:4px 8px;outline:none}
-  .strat-pct-input:focus{border-color:rgba(200,245,99,.4)}
-  .strat-bar-track{height:8px;background:var(--surface3);border-radius:4px;overflow:hidden}
-  .strat-bar-fill{height:100%;border-radius:4px;transition:width .5s ease}
+  .strat-pct{font-family:var(--font-display);font-weight:700;font-size:17px}
+  .strat-pct-input{width:76px;text-align:right;background:rgba(0,0,0,.35);border:1px solid var(--border2);border-radius:8px;
+    color:var(--text);font-family:var(--font-display);font-weight:700;font-size:15px;padding:5px 9px;outline:none;
+    transition:border-color .25s,box-shadow .25s}
+  .strat-pct-input:focus{border-color:rgba(200,245,99,.5);box-shadow:0 0 0 3px rgba(200,245,99,.1)}
+  .strat-bar-track{height:9px;background:rgba(255,255,255,.06);border-radius:5px;overflow:hidden}
+  .strat-bar-fill{height:100%;border-radius:5px;transition:width .8s var(--ease);
+    box-shadow:0 0 14px -2px currentColor;position:relative}
+  .strat-bar-fill::after{content:'';position:absolute;inset:0;
+    background:linear-gradient(90deg,transparent 30%,rgba(255,255,255,.25) 50%,transparent 70%);
+    background-size:200% 100%;animation:wosShimmer 3.2s linear infinite}
   .strat-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
-  .strat-status{font-size:9px;padding:1px 6px;border-radius:3px;letter-spacing:.05em;text-transform:uppercase}
-  .status-active{background:var(--accent-dim);color:var(--accent);border:1px solid rgba(200,245,99,.25)}
-  .status-planned{background:var(--surface3);color:var(--muted);border:1px solid var(--border)}
+  .strat-status{font-size:9px;padding:2px 7px;border-radius:999px;letter-spacing:.06em;text-transform:uppercase}
+  .status-active{background:var(--accent-dim);color:var(--accent);border:1px solid rgba(200,245,99,.3);box-shadow:0 0 10px -3px rgba(200,245,99,.4)}
+  .status-planned{background:rgba(255,255,255,.05);color:var(--muted);border:1px solid var(--border)}
 
-  /* Cash flow table */
+  /* ── Cash flows ── */
   .flow-table{width:100%;border-collapse:collapse}
-  .flow-table th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;padding:9px 14px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+  .flow-table th{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500;
+    padding:10px 16px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
   .flow-table th:not(:first-child){text-align:right}
-  .flow-table td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px}
+  .flow-table td{padding:11px 16px;border-bottom:1px solid var(--border);font-size:12px;transition:background .2s}
   .flow-table td:not(:first-child){text-align:right}
   .flow-table tr:last-child td{border-bottom:none}
-  .flow-table tr:hover td{background:var(--surface2)}
-  .flow-badge{font-size:9px;padding:1px 6px;border-radius:3px;letter-spacing:.04em}
-  .flow-auto{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(91,156,246,.25)}
-  .flow-manual{background:var(--surface3);color:var(--muted);border:1px solid var(--border)}
-  .flow-del{cursor:pointer;color:var(--muted2);font-size:14px;transition:color .15s}
-  .flow-del:hover{color:var(--red)}
+  .flow-table tr:hover td{background:rgba(255,255,255,.035)}
+  .flow-badge{font-size:9px;padding:2px 7px;border-radius:999px;letter-spacing:.05em}
+  .flow-auto{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(91,156,246,.3)}
+  .flow-manual{background:rgba(255,255,255,.05);color:var(--muted);border:1px solid var(--border)}
+  .flow-del{cursor:pointer;color:var(--muted2);font-size:14px;transition:color .2s,transform .2s;display:inline-block}
+  .flow-del:hover{color:var(--red);transform:scale(1.25)}
 
-  /* Add flow form */
-  .flow-form{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--border);flex-wrap:wrap;align-items:end}
+  .flow-form{display:flex;gap:10px;padding:14px 16px;border-top:1px solid var(--border);flex-wrap:wrap;align-items:end}
   .flow-field{display:flex;flex-direction:column;gap:4px}
-  .flow-field label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-  .flow-input{background:var(--surface2);border:1px solid var(--border2);border-radius:5px;color:var(--text);font-family:var(--font-mono);font-size:13px;padding:7px 10px;outline:none}
-  .flow-input:focus{border-color:rgba(200,245,99,.4)}
-  .btn{font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:8px 14px;border-radius:5px;cursor:pointer;border:1px solid var(--border2);background:var(--surface);color:var(--text);transition:all .15s}
-  .btn:hover{background:var(--surface2)}
-  .btn-accent{background:var(--accent-dim);border-color:rgba(200,245,99,.35);color:var(--accent)}
-  .btn-accent:hover{background:rgba(200,245,99,.2)}
+  .flow-field label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .flow-input{background:rgba(0,0,0,.35);border:1px solid var(--border2);border-radius:9px;color:var(--text);
+    font-family:var(--font-mono);font-size:13px;padding:8px 11px;outline:none;transition:border-color .25s,box-shadow .25s}
+  .flow-input:focus{border-color:rgba(200,245,99,.5);box-shadow:0 0 0 3px rgba(200,245,99,.1)}
 
-  .footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:11px;color:var(--muted);flex-wrap:wrap;gap:6px}
   @media(max-width:700px){
-    .header,.main{padding:12px 14px}
-    .hero-value{font-size:38px}
+    .header,.main{padding-left:14px;padding-right:14px}
+    .hero-value{font-size:42px}
     .metrics{grid-template-columns:1fr 1fr}
-    .chart-wrap{height:220px}
+    .chart-wrap{height:230px}
   }
   @media(max-width:480px){.logo{display:none}}
-  ::-webkit-scrollbar{width:4px;height:4px}
-  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 </style>
 </head>
 <body>
@@ -156,40 +136,40 @@ __NAV_PLACEHOLDER__
 
   <div class="hero">
     <div class="hero-label">Total Portfolio Value</div>
-    <div class="hero-value" id="heroValue">$0.00</div>
+    <div class="hero-value" id="heroValue" data-count>$0.00</div>
     <div class="hero-sub">
       <div class="hero-stat">
         <div class="hero-stat-label">True P&L</div>
-        <div class="hero-stat-val" id="heroPnl">—</div>
+        <div class="hero-stat-val" id="heroPnl" data-count>—</div>
       </div>
       <div class="hero-stat">
         <div class="hero-stat-label">Net Deposited</div>
-        <div class="hero-stat-val" id="heroDeposited">—</div>
+        <div class="hero-stat-val" id="heroDeposited" data-count>—</div>
       </div>
       <div class="hero-stat">
         <div class="hero-stat-label">Return on Capital</div>
-        <div class="hero-stat-val" id="heroReturn">—</div>
+        <div class="hero-stat-val" id="heroReturn" data-count>—</div>
       </div>
       <div class="hero-stat">
         <div class="hero-stat-label">Time-Weighted Return</div>
-        <div class="hero-stat-val" id="heroTwr">—</div>
+        <div class="hero-stat-val" id="heroTwr" data-count>—</div>
       </div>
       <div class="hero-stat">
         <div class="hero-stat-label">XIRR (annualized)</div>
-        <div class="hero-stat-val" id="heroXirr">—</div>
+        <div class="hero-stat-val" id="heroXirr" data-count>—</div>
       </div>
     </div>
   </div>
 
   <div class="metrics">
-    <div class="metric"><div class="metric-label">Current Value</div><div class="metric-value" id="mValue">—</div><div class="metric-sub">live</div></div>
-    <div class="metric"><div class="metric-label">Total Deposited</div><div class="metric-value" id="mDeposited">—</div><div class="metric-sub" id="mFlowCount">—</div></div>
-    <div class="metric"><div class="metric-label">Money Made</div><div class="metric-value" id="mPnl">—</div><div class="metric-sub">excl. deposits</div></div>
-    <div class="metric"><div class="metric-label">Strategies</div><div class="metric-value" id="mStrats">—</div><div class="metric-sub">active</div></div>
-    <div class="metric"><div class="metric-label">Sharpe</div><div class="metric-value" id="mSharpe">—</div><div class="metric-sub" id="mSortino">sortino —</div></div>
-    <div class="metric"><div class="metric-label">Volatility</div><div class="metric-value" id="mVol">—</div><div class="metric-sub">annualized</div></div>
-    <div class="metric"><div class="metric-label">Max Drawdown</div><div class="metric-value" id="mMaxDd">—</div><div class="metric-sub">flow-adjusted, peak to trough</div></div>
-    <div class="metric"><div class="metric-label">Best / Worst Day</div><div class="metric-value" id="mBestDay">—</div><div class="metric-sub" id="mWorstDay">—</div></div>
+    <div class="metric"><div class="metric-label">Current Value</div><div class="metric-value" id="mValue" data-count>—</div><div class="metric-sub">live</div></div>
+    <div class="metric"><div class="metric-label">Total Deposited</div><div class="metric-value" id="mDeposited" data-count>—</div><div class="metric-sub" id="mFlowCount">—</div></div>
+    <div class="metric"><div class="metric-label">Money Made</div><div class="metric-value" id="mPnl" data-count>—</div><div class="metric-sub">excl. deposits</div></div>
+    <div class="metric"><div class="metric-label">Strategies</div><div class="metric-value" id="mStrats" data-count>—</div><div class="metric-sub">active</div></div>
+    <div class="metric"><div class="metric-label">Sharpe</div><div class="metric-value" id="mSharpe" data-count>—</div><div class="metric-sub" id="mSortino">sortino —</div></div>
+    <div class="metric"><div class="metric-label">Volatility</div><div class="metric-value" id="mVol" data-count>—</div><div class="metric-sub">annualized</div></div>
+    <div class="metric"><div class="metric-label">Max Drawdown</div><div class="metric-value" id="mMaxDd" data-count>—</div><div class="metric-sub">flow-adjusted, peak to trough</div></div>
+    <div class="metric"><div class="metric-label">Best / Worst Day</div><div class="metric-value" id="mBestDay" data-count>—</div><div class="metric-sub" id="mWorstDay">—</div></div>
   </div>
 
   <div class="panel">
@@ -335,6 +315,7 @@ function render(){
   renderChart();
   renderStrategies();
   renderFlows();
+  if(window.wosCountUp)wosCountUp();
 }
 
 function filterRange(arr){

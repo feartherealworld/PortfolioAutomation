@@ -282,35 +282,48 @@ async def tv_webhook(request: Request):
 def _login_page(next_q: str = "", error: bool = False) -> str:
     """Login form. POSTs credentials to /login; `next_q` (a "?..." query string)
     brings the user back to the page they wanted — e.g. a Slack approve link."""
-    err_div  = '<div class="err">Invalid credentials</div>' if error else ""
+    err_div  = '<div class="err">✕ Invalid credentials</div>' if error else ""
+    shake    = " shake" if error else ""
     next_esc = _html_escape(next_q)
     return f"""<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Signal Bot — Login</title>
+<title>WealthOS — Sign in</title>
+{_theme_head()}
 <style>
-  *{{margin:0;padding:0;box-sizing:border-box}}
-  body{{font-family:'DM Mono',monospace;background:#0a0a0a;color:#f0ede8;
-       min-height:100vh;display:flex;align-items:center;justify-content:center}}
-  .box{{background:#111;border:1px solid rgba(255,255,255,0.08);border-radius:8px;
-        padding:32px;width:100%;max-width:360px}}
-  .logo{{font-family:'Syne',sans-serif;font-size:18px;font-weight:700;margin-bottom:24px}}
-  .logo span{{color:#c8f563}}
-  label{{font-size:11px;letter-spacing:.1em;text-transform:uppercase;
-         color:#6b6860;display:block;margin-bottom:6px}}
-  input{{width:100%;padding:10px 12px;background:#0a0a0a;
-         border:1px solid rgba(255,255,255,0.12);border-radius:5px;
-         color:#f0ede8;font-family:'DM Mono',monospace;font-size:13px;margin-bottom:16px}}
-  input:focus{{outline:none;border-color:#c8f563}}
-  button{{width:100%;padding:11px;background:rgba(200,245,99,0.12);
-          border:1px solid rgba(200,245,99,0.35);border-radius:5px;color:#c8f563;
-          font-family:'DM Mono',monospace;font-size:12px;
-          letter-spacing:.06em;text-transform:uppercase;cursor:pointer}}
-  button:hover{{background:rgba(200,245,99,0.2)}}
-  .err{{color:#ff5c5c;font-size:12px;margin-bottom:12px}}
+  body{{display:flex;align-items:center;justify-content:center;padding:24px}}
+  .box{{position:relative;background:var(--glass);border:1px solid var(--border);border-radius:20px;
+        backdrop-filter:blur(20px) saturate(1.2);-webkit-backdrop-filter:blur(20px) saturate(1.2);
+        box-shadow:0 30px 70px -24px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.07);
+        padding:38px 36px 34px;width:100%;max-width:390px;
+        animation:wosRise .8s var(--ease) backwards}}
+  .box::before{{content:'';position:absolute;inset:0 0 auto 0;height:1px;
+        background:linear-gradient(90deg,transparent,rgba(200,245,99,.45),rgba(126,245,208,.35),transparent)}}
+  .box.shake{{animation:wosRise .8s var(--ease) backwards,wosShake .4s ease .1s}}
+  @keyframes wosShake{{20%{{transform:translateX(-7px)}}40%{{transform:translateX(6px)}}60%{{transform:translateX(-4px)}}80%{{transform:translateX(3px)}}}}
+  .logo{{font-family:var(--font-display);font-size:26px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px}}
+  .logo span{{background:var(--grad);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+        animation:wosShimmer 6s linear infinite}}
+  .tagline{{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:28px}}
+  label{{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}}
+  input{{width:100%;padding:12px 14px;background:rgba(0,0,0,.35);
+        border:1px solid var(--border2);border-radius:10px;
+        color:var(--text);font-family:var(--font-mono);font-size:13px;margin-bottom:18px;
+        transition:border-color .25s,box-shadow .25s;outline:none}}
+  input:focus{{border-color:rgba(200,245,99,.55);box-shadow:0 0 0 3px rgba(200,245,99,.12),0 0 20px -4px rgba(200,245,99,.3)}}
+  button{{width:100%;padding:13px;background:var(--grad);border:none;border-radius:10px;color:#10130a;
+        font-family:var(--font-mono);font-size:12px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;
+        cursor:pointer;transition:all .25s var(--ease);box-shadow:0 0 22px rgba(200,245,99,.25)}}
+  button:hover{{box-shadow:0 0 34px rgba(200,245,99,.5);transform:translateY(-1px)}}
+  button:active{{transform:translateY(0)}}
+  .err{{color:var(--red);font-size:12px;margin-bottom:14px;padding:9px 12px;border-radius:9px;
+        background:var(--red-dim);border:1px solid rgba(255,92,92,.35)}}
 </style></head><body>
-<form class="box" method="POST" action="/login">
-  <div class="logo">signal<span>bot</span></div>
+<div class="wos-aurora"></div>
+<div class="wos-grid"></div>
+<form class="box{shake}" method="POST" action="/login">
+  <div class="logo">wealth<span>os</span></div>
+  <div class="tagline">portfolio command center</div>
   {err_div}
   <input type="hidden" name="next" value="{next_esc}">
   <label>Username</label>
