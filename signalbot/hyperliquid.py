@@ -24,6 +24,37 @@ __all__ = [
 
 
 
+def _sanitized_spot_meta(info) -> dict:
+    """
+    Real spot metadata with broken universe entries removed.
+
+    HL sometimes publishes spot_meta whose universe references token indices
+    beyond tokens[] — that crashes the SDK Info constructor ("list index out
+    of range"). The old workaround passed an EMPTY spot_meta, which silently
+    broke every spot order: the SDK had no '@N' entries in its ticker map, so
+    exchange.market_open('@156', ...) raised KeyError before any order was
+    sent (root cause of the no-trades-since-May incident, fixed 2026-07-05).
+    Keeping only in-range universe entries restores spot execution while
+    still dodging the constructor crash.
+    """
+    try:
+        meta   = info.spot_meta()
+        tokens = meta.get("tokens", [])
+        n      = len(tokens)
+        universe = [p for p in meta.get("universe", [])
+                    if all(isinstance(t, int) and 0 <= t < n
+                           for t in p.get("tokens", []))]
+        dropped = len(meta.get("universe", [])) - len(universe)
+        if dropped:
+            print(f"[spot_meta] dropped {dropped} broken universe entries")
+        return {"tokens": tokens, "universe": universe}
+    except Exception as e:
+        # Fail open (empty meta): perp trading keeps working; spot orders
+        # would fail loudly in execute_trades and reach Slack.
+        print(f"[spot_meta] sanitize failed ({e}) — spot orders unavailable this run")
+        return {"tokens": [], "universe": []}
+
+
 def get_hl_clients():
     import eth_account as _ea
     from hyperliquid.exchange import Exchange
@@ -38,11 +69,10 @@ def get_hl_clients():
     # HlInfo makes raw HTTP calls to the same endpoints — no broken constructor.
     info = HlInfo(url)
 
-    # Exchange still needs to be constructed — it only uses spot_meta for
-    # sz_decimals lookups which we handle ourselves in execute_trades.
-    # Pass an empty spot_meta to skip the broken constructor indexing.
+    # The Exchange needs real (sanitized) spot metadata so it can resolve
+    # spot tickers like "@156" to asset ids when placing orders.
     exchange = Exchange(wallet, url, account_address=addr,
-                        spot_meta={"tokens": [], "universe": []})
+                        spot_meta=_sanitized_spot_meta(info))
     return info, exchange
 
 
