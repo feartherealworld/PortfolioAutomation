@@ -3,63 +3,131 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TRW Signal Bot — Setup Guide</title>
+<title>WealthOS — Setup Guide</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0d1117; --surface: #161b22; --border: #21262d;
-    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
-    --green: #3fb950; --yellow: #d29922; --red: #f85149;
-    --code-bg: #161b22;
+    --bg:#050607;
+    --glass:rgba(17,20,21,.6); --glass2:rgba(28,32,30,.55);
+    --border:rgba(255,255,255,.07); --border2:rgba(255,255,255,.14);
+    --text:#f2efe9; --muted:#8a877e; --muted2:#4a4844;
+    --accent:#c8f563; --accent2:#7ef5d0;
+    --red:#ff5c5c; --blue:#5b9cf6; --amber:#f5a623;
+    --grad:linear-gradient(92deg,#eef7d8 0%,var(--accent) 48%,var(--accent2) 100%);
+    --font-mono:'DM Mono',monospace; --font-display:'Syne',sans-serif;
+    --ease:cubic-bezier(.22,1,.36,1);
   }
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.7; padding: 0; }
-  .container { max-width: 820px; margin: 0 auto; padding: 40px 24px; }
-  h1 { font-size: 2em; margin-bottom: 8px; }
-  h2 { font-size: 1.3em; margin: 40px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
-  h3 { font-size: 1.05em; margin: 20px 0 8px; color: var(--accent); }
-  p { margin: 10px 0; color: var(--muted); }
-  p strong { color: var(--text); }
-  a { color: var(--accent); }
-  ul, ol { padding-left: 20px; margin: 10px 0; color: var(--muted); }
-  li { margin: 4px 0; }
-  li strong { color: var(--text); }
-  code { background: var(--code-bg); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.88em; color: #e6edf3; }
-  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; margin: 12px 0; }
-  pre code { background: none; border: none; padding: 0; font-size: 0.9em; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin: 16px 0; }
-  .warn { background: #2d1b00; border: 1px solid #5a3e1b; border-radius: 8px; padding: 16px; margin: 16px 0; color: var(--yellow); }
-  .warn strong { color: #f0a92e; }
-  .info { background: #0c2340; border: 1px solid #1f4a7a; border-radius: 8px; padding: 16px; margin: 16px 0; color: #79c0ff; }
-  .success { background: #0d2b1a; border: 1px solid #1a5c33; border-radius: 8px; padding: 16px; margin: 16px 0; color: var(--green); }
-  .step { display: flex; gap: 16px; margin: 20px 0; }
-  .step-num { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: #1f6feb; color: #fff; font-weight: 700; font-size: 0.9em; flex-shrink: 0; margin-top: 2px; }
-  .step-body { flex: 1; }
-  .step-body h3 { margin-top: 0; }
-  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin: 24px 0; }
-  .toc h3 { margin-top: 0; color: var(--text); margin-bottom: 12px; }
-  .toc ol { color: var(--muted); }
-  .toc a { color: var(--accent); text-decoration: none; }
-  .toc a:hover { text-decoration: underline; }
-  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.9em; }
-  th { text-align: left; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-weight: 600; }
-  td { padding: 8px 12px; border: 1px solid var(--border); color: var(--muted); }
-  td strong { color: var(--text); }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }
-  .badge-green { background: #1a7f37; color: #fff; }
-  .badge-blue { background: #1f6feb; color: #fff; }
-  .badge-yellow { background: #5a3e00; color: #f0a92e; }
-  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; }
-  header h1 { font-size: 1.3em; margin: 0; }
-  header p { margin: 2px 0 0; font-size: 0.9em; }
+  body { background:var(--bg); color:var(--text); font-family:var(--font-mono); font-size:14px; line-height:1.75; overflow-x:hidden; }
+  ::selection{background:rgba(200,245,99,.25);color:#fff}
+
+  .wos-aurora{position:fixed;inset:-22%;z-index:-2;pointer-events:none;filter:blur(50px);
+    background:
+      radial-gradient(36% 30% at 16% 20%,rgba(200,245,99,.09),transparent 62%),
+      radial-gradient(30% 26% at 84% 10%,rgba(126,245,208,.07),transparent 60%),
+      radial-gradient(40% 34% at 72% 88%,rgba(91,156,246,.065),transparent 65%),
+      radial-gradient(28% 24% at 6% 82%,rgba(192,132,252,.05),transparent 60%);}
+  .wos-grid{position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background-image:linear-gradient(rgba(255,255,255,.024) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(255,255,255,.024) 1px,transparent 1px);
+    background-size:44px 44px;
+    -webkit-mask-image:radial-gradient(80% 62% at 50% 30%,black,transparent 88%);
+            mask-image:radial-gradient(80% 62% at 50% 30%,black,transparent 88%);}
+
+  header { border-bottom:1px solid var(--border); padding:64px 24px 46px; text-align:center;
+    background:radial-gradient(60% 130% at 50% -30%,rgba(200,245,99,.08),transparent 70%); }
+  .logo { font-family:var(--font-display); font-size:44px; font-weight:800; letter-spacing:-.03em; line-height:1; }
+  .logo span { background:var(--grad); background-size:220% 100%; -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation:shimmer 7s linear infinite; }
+  @keyframes shimmer { 0%{background-position:130% 0} 100%{background-position:-130% 0} }
+  .tagline { margin-top:10px; font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted); }
+
+  .container { max-width:860px; margin:0 auto; padding:36px 24px 80px; }
+
+  h2 { font-family:var(--font-display); font-size:24px; font-weight:800; letter-spacing:-.02em;
+    margin:56px 0 16px; padding-top:8px;
+    background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  h3 { font-family:var(--font-display); font-size:15px; font-weight:700; margin:26px 0 8px; color:var(--text); }
+  p { margin:10px 0; color:var(--muted); }
+  p strong, li strong { color:var(--text); font-weight:500; }
+  a { color:var(--accent2); text-decoration:none; border-bottom:1px solid rgba(126,245,208,.3); }
+  a:hover { border-bottom-color:var(--accent2); }
+  ul, ol { padding-left:22px; margin:10px 0; color:var(--muted); }
+  li { margin:5px 0; }
+
+  code { background:rgba(200,245,99,.07); border:1px solid rgba(200,245,99,.18); padding:2px 7px;
+    border-radius:6px; font-family:var(--font-mono); font-size:.9em; color:var(--accent); }
+  pre { background:rgba(0,0,0,.45); border:1px solid var(--border2); border-radius:12px; padding:16px 18px;
+    overflow-x:auto; margin:12px 0; box-shadow:inset 0 1px 0 rgba(255,255,255,.04); }
+  pre code { background:none; border:none; padding:0; color:#d8e6c2; font-size:.95em; }
+
+  .card, .toc { position:relative; background:var(--glass); border:1px solid var(--border); border-radius:16px;
+    padding:22px 24px; margin:18px 0;
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    box-shadow:0 18px 44px -20px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.05); }
+  .card::before, .toc::before { content:''; position:absolute; inset:0 0 auto 0; height:1px; border-radius:16px 16px 0 0;
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.14) 30%,rgba(200,245,99,.2) 50%,rgba(255,255,255,.14) 70%,transparent); }
+  .warn { background:rgba(255,92,92,.07); border:1px solid rgba(255,92,92,.35); border-radius:14px;
+    padding:16px 18px; margin:16px 0; color:#ffb0b0; backdrop-filter:blur(10px); }
+  .warn strong { color:var(--red); }
+  .info { background:rgba(91,156,246,.07); border:1px solid rgba(91,156,246,.3); border-radius:14px;
+    padding:16px 18px; margin:16px 0; color:#a9c8f5; backdrop-filter:blur(10px); }
+  .success { background:rgba(200,245,99,.06); border:1px solid rgba(200,245,99,.3); border-radius:14px;
+    padding:16px 18px; margin:16px 0; color:var(--accent); backdrop-filter:blur(10px);
+    box-shadow:0 0 26px -10px rgba(200,245,99,.35); }
+
+  .step { display:flex; gap:16px; margin:22px 0; }
+  .step-num { display:flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:50%;
+    background:var(--grad); color:#10130a; font-family:var(--font-display); font-weight:800; font-size:15px;
+    flex-shrink:0; margin-top:2px; box-shadow:0 0 18px rgba(200,245,99,.3); }
+  .step-body { flex:1; min-width:0; }
+  .step-body h3 { margin-top:2px; }
+
+  .toc h3 { margin-top:0; margin-bottom:12px; }
+  .toc ol { columns:2; column-gap:36px; }
+  @media(max-width:640px){ .toc ol { columns:1; } }
+  .toc a { border-bottom:none; color:var(--muted); }
+  .toc a:hover { color:var(--accent); }
+
+  table { width:100%; border-collapse:collapse; margin:14px 0; font-size:.95em; }
+  th { text-align:left; padding:10px 14px; background:rgba(255,255,255,.04); border-bottom:1px solid var(--border2);
+    color:var(--muted); font-weight:500; font-size:11px; letter-spacing:.1em; text-transform:uppercase; }
+  td { padding:10px 14px; border-bottom:1px solid var(--border); color:var(--muted); }
+  tr:last-child td { border-bottom:none; }
+  td strong { color:var(--text); }
+
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:.78em; font-weight:500;
+    letter-spacing:.06em; text-transform:uppercase; }
+  .badge-green { background:rgba(200,245,99,.13); color:var(--accent); border:1px solid rgba(200,245,99,.35);
+    box-shadow:0 0 10px -3px rgba(200,245,99,.5); }
+  .badge-blue { background:rgba(91,156,246,.13); color:var(--blue); border:1px solid rgba(91,156,246,.35); }
+  .badge-yellow { background:rgba(245,166,35,.13); color:var(--amber); border:1px solid rgba(245,166,35,.35); }
+
+  .pillars { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:20px 0; }
+  @media(max-width:700px){ .pillars { grid-template-columns:1fr; } }
+  .pillar { background:var(--glass); border:1px solid var(--border); border-radius:14px; padding:18px;
+    backdrop-filter:blur(12px); transition:transform .3s var(--ease), border-color .3s; }
+  .pillar:hover { transform:translateY(-3px); border-color:rgba(200,245,99,.3); }
+  .pillar h3 { margin:0 0 8px; font-size:14px; }
+  .pillar p { font-size:12px; margin:0; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    header { animation:rise .8s var(--ease) backwards; }
+    .container > * { animation:rise .7s var(--ease) backwards; animation-delay:.15s; }
+  }
+  @keyframes rise { from { opacity:0; transform:translateY(22px); } }
+  @media (prefers-reduced-motion: reduce) { *{animation:none!important} }
+  ::-webkit-scrollbar{width:5px} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:3px}
 </style>
 </head>
 <body>
 
+<div class="wos-aurora"></div>
+<div class="wos-grid"></div>
+
 <header>
-  <div style="max-width:820px;margin:0 auto">
-    <h1>TRW Signal Bot</h1>
-    <p style="color:var(--muted)">Full setup guide — from zero to automated trading</p>
-  </div>
+  <div class="logo">wealth<span>os</span></div>
+  <div class="tagline">portfolio command center — setup guide</div>
 </header>
 
 <div class="container">
@@ -67,41 +135,65 @@
 <div class="toc">
   <h3>Contents</h3>
   <ol>
+    <li><a href="#what-is">What is WealthOS</a></li>
     <li><a href="#how-it-works">How It Works</a></li>
     <li><a href="#what-you-need">What You Need</a></li>
-    <li><a href="#step1">Step 1 — Get Your TRW Session Token</a></li>
-    <li><a href="#step2">Step 2 — Set Up Hyperliquid API</a></li>
-    <li><a href="#step3">Step 3 — Set Up Modal</a></li>
-    <li><a href="#step4">Step 4 — Set Up Slack Notifications</a></li>
-    <li><a href="#step5">Step 5 — Install & Deploy</a></li>
+    <li><a href="#step1">Step 1 — TRW Session Token</a></li>
+    <li><a href="#step2">Step 2 — Hyperliquid API</a></li>
+    <li><a href="#step3">Step 3 — Modal</a></li>
+    <li><a href="#step4">Step 4 — Slack Notifications</a></li>
+    <li><a href="#step5">Step 5 — Install &amp; Deploy</a></li>
     <li><a href="#step6">Step 6 — Test Everything</a></li>
-    <li><a href="#dashboard">Using the Dashboard</a></li>
+    <li><a href="#dashboard">The Dashboard</a></li>
+    <li><a href="#safety">Safety &amp; the Kill Switch</a></li>
     <li><a href="#maintenance">Maintenance</a></li>
-    <li><a href="#security">Security & Trust</a></li>
+    <li><a href="#security">Security &amp; Trust</a></li>
     <li><a href="#faq">FAQ</a></li>
   </ol>
+</div>
+
+<!-- WHAT IS -->
+<h2 id="what-is">What is WealthOS</h2>
+
+<p>WealthOS is a self-hosted portfolio command center for Hyperliquid, built from three pillars:</p>
+
+<div class="pillars">
+  <div class="pillar">
+    <h3>⚡ RSPS Autopilot</h3>
+    <p>Reads Prof Adam's Portfolio Signal at bar close, parses the allocations, and rebalances your Hyperliquid account — spot where a market exists, 1x perps otherwise, optional per-asset leverage.</p>
+  </div>
+  <div class="pillar">
+    <h3>📊 Wealth Analytics</h3>
+    <p>Deposit-aware returns (TWR, XIRR), Sharpe, Sortino, volatility, max drawdown, and your performance charted against just-holding BTC or ETH.</p>
+  </div>
+  <div class="pillar">
+    <h3>🧪 Strategy Lab</h3>
+    <p>Bridge any TradingView strategy via webhook into a paper-trading engine with its own equity curve. Forward-test with fake money until it earns real capital.</p>
+  </div>
 </div>
 
 <!-- HOW IT WORKS -->
 <h2 id="how-it-works">How It Works</h2>
 
-<p>The bot runs in the cloud on Modal (free tier). Every few minutes it:</p>
+<p>Everything runs in the cloud on Modal (free tier) — your computer can be off. On a schedule the bot:</p>
 <ol>
   <li>Reads the latest signal from Prof Adam's Portfolio Signals channel via TRW's API</li>
-  <li>Parses the allocation percentages (e.g. 80% ETH, 14.3% HYPE, 5.7% PAXG)</li>
-  <li>Compares to your current Hyperliquid positions</li>
-  <li>Rebalances if the signal has changed — using 1x leverage perps</li>
-  <li>Sends you a Slack notification with execution details and price deviation from bar close</li>
+  <li>Parses the allocation percentages (e.g. 16.7% SOL, 83.3% Cash)</li>
+  <li>Compares them to your current Hyperliquid positions</li>
+  <li>Rebalances if the signal changed — spot markets when available, 1x perps otherwise</li>
+  <li>Sends a Slack execution report: fills, deviation from the 00:00 UTC open, slippage cost</li>
 </ol>
 
 <div class="card">
   <table>
-    <tr><th>Time (UK)</th><th>Polling frequency</th><th>Trading mode</th></tr>
+    <tr><th>Time (UK)</th><th>Polling</th><th>Trading mode</th></tr>
     <tr><td>00:00–00:30</td><td>Every 2 minutes</td><td><span class="badge badge-green">Auto-execute</span></td></tr>
     <tr><td>00:30–05:00</td><td>Every 10 minutes</td><td><span class="badge badge-green">Auto-execute</span></td></tr>
-    <tr><td>05:00–00:00</td><td>Every hour</td><td><span class="badge badge-yellow">Approval required</span></td></tr>
+    <tr><td>05:00–00:00</td><td>Every 2 hours</td><td><span class="badge badge-yellow">Approval required</span></td></tr>
   </table>
 </div>
+
+<p>During daytime hours a new signal triggers a Slack message with <strong>Approve</strong> / <strong>Dismiss</strong> links — you decide from your phone. Overnight (when signals actually drop) it executes autonomously.</p>
 
 <!-- WHAT YOU NEED -->
 <h2 id="what-you-need">What You Need</h2>
@@ -109,13 +201,13 @@
 <table>
   <tr><th>Item</th><th>Cost</th><th>Notes</th></tr>
   <tr><td><strong>TRW Subscription</strong></td><td>You already have this</td><td>Investing Masterclass campus</td></tr>
-  <tr><td><strong>Hyperliquid Account</strong></td><td>Free</td><td>With USDC deposited for trading</td></tr>
-  <tr><td><strong>Modal Account</strong></td><td>Free</td><td>Cloud hosting — runs the bot 24/7</td></tr>
-  <tr><td><strong>Slack Workspace</strong></td><td>Free</td><td>For notifications (optional but recommended)</td></tr>
+  <tr><td><strong>Hyperliquid Account</strong></td><td>Free</td><td>With USDC deposited</td></tr>
+  <tr><td><strong>Modal Account</strong></td><td>Free</td><td>Cloud hosting — runs everything 24/7</td></tr>
+  <tr><td><strong>Slack Workspace</strong></td><td>Free</td><td>Notifications (optional, recommended)</td></tr>
   <tr><td><strong>Python 3.12+</strong></td><td>Free</td><td>For initial setup only</td></tr>
 </table>
 
-<p><strong>Total monthly cost: $0</strong> beyond your existing TRW subscription and Hyperliquid trading fees (~0.04%).</p>
+<p><strong>Total monthly cost: $0</strong> beyond Hyperliquid trading fees (~0.04% per trade).</p>
 
 <!-- STEP 1 -->
 <h2 id="step1">Step 1 — Get Your TRW Session Token</h2>
@@ -134,7 +226,7 @@
   <div class="step-num">2</div>
   <div class="step-body">
     <h3>Open DevTools</h3>
-    <p>Press <code>F12</code> to open DevTools. Click the <strong>Network</strong> tab, then click <strong>Fetch/XHR</strong>.</p>
+    <p>Press <code>F12</code>. Click the <strong>Network</strong> tab, then <strong>Fetch/XHR</strong>.</p>
   </div>
 </div>
 
@@ -142,26 +234,26 @@
   <div class="step-num">3</div>
   <div class="step-body">
     <h3>Reload and find the token</h3>
-    <p>Reload the page (<code>F5</code>). Click any request in the list. In the <strong>Headers</strong> tab, scroll to <strong>Request Headers</strong> and find <code>x-session-token</code>. Copy the entire value.</p>
+    <p>Reload the page (<code>F5</code>). Click any request in the list. Under <strong>Request Headers</strong> find <code>x-session-token</code> and copy the entire value.</p>
   </div>
 </div>
 
 <div class="warn">
-  <strong>⚠️ Never share your session token.</strong> Copy it directly into the manager GUI (<code>python manage.py</code>). Do not paste it into Discord, AI chats, or anywhere else. If anyone asks for your session token for any reason, they are trying to scam you.
+  <strong>⚠️ Never share your session token.</strong> Copy it directly into the manager GUI (<code>python manage.py</code>). Do not paste it into Discord, AI chats, or anywhere else. Anyone asking for your session token is trying to scam you.
 </div>
 
-<p>Session tokens appear to be long-lived (days to weeks). The bot will notify you on Slack if it expires.</p>
+<p>Session tokens are long-lived (days to weeks). The bot alerts you on Slack when it expires.</p>
 
 <!-- STEP 2 -->
 <h2 id="step2">Step 2 — Set Up Hyperliquid API</h2>
 
-<p>The bot needs an API wallet to place trades on your behalf.</p>
+<p>The bot trades through an API wallet that acts on behalf of your main account.</p>
 
 <div class="step">
   <div class="step-num">1</div>
   <div class="step-body">
     <h3>Go to Hyperliquid</h3>
-    <p>Open <a href="https://app.hyperliquid.xyz" target="_blank">app.hyperliquid.xyz</a>, connect your wallet, and make sure you have USDC deposited in your <strong>Perps</strong> wallet (not Spot — you can transfer in the Portfolio page).</p>
+    <p>Open <a href="https://app.hyperliquid.xyz" target="_blank">app.hyperliquid.xyz</a>, connect your wallet, and deposit USDC. WealthOS uses Hyperliquid's <strong>unified account</strong> — spot and perps share one balance, and the bot activates unification automatically.</p>
   </div>
 </div>
 
@@ -169,7 +261,7 @@
   <div class="step-num">2</div>
   <div class="step-body">
     <h3>Generate an API wallet</h3>
-    <p>Click <strong>More → API</strong> in the top menu. Give it a name (e.g. "signal-bot") — important because unnamed wallets overwrite each other. Click <strong>Generate</strong> then <strong>Authorize API Wallet</strong>. Set validity to <strong>180 days</strong> (maximum). Click Authorize and sign in MetaMask.</p>
+    <p>Click <strong>More → API</strong>. Name it (e.g. "signal-bot") — unnamed wallets overwrite each other. Click <strong>Generate</strong> then <strong>Authorize API Wallet</strong>, validity <strong>180 days</strong> (maximum), and sign.</p>
   </div>
 </div>
 
@@ -177,16 +269,15 @@
   <div class="step-num">3</div>
   <div class="step-body">
     <h3>Copy your keys</h3>
-    <p>You need two things:</p>
     <ul>
-      <li><strong>Private Key</strong> — shown after generation (goes into <code>HYPERLIQUID_API_PRIVATE_KEY</code>)</li>
-      <li><strong>Master Account Address</strong> — your main wallet address shown in the top-right dropdown (goes into <code>HYPERLIQUID_MASTER_ACCOUNT_ADDRESS</code>)</li>
+      <li><strong>Private Key</strong> — shown after generation → <code>HYPERLIQUID_API_PRIVATE_KEY</code></li>
+      <li><strong>Master Account Address</strong> — your main wallet address → <code>HYPERLIQUID_MASTER_ACCOUNT_ADDRESS</code></li>
     </ul>
   </div>
 </div>
 
 <div class="warn">
-  <strong>⚠️ The API wallet can place and cancel orders but cannot withdraw funds.</strong> Even in a worst-case scenario, your funds cannot be stolen via the API key — only bad positions could be opened, which you can close by revoking the key at app.hyperliquid.xyz.
+  <strong>⚠️ The API wallet can place and cancel orders but cannot withdraw funds.</strong> Worst case, bad positions could be opened — revoke the key instantly at app.hyperliquid.xyz.
 </div>
 
 <p>Set a calendar reminder to regenerate the key before the 180-day expiry.</p>
@@ -194,253 +285,228 @@
 <!-- STEP 3 -->
 <h2 id="step3">Step 3 — Set Up Modal</h2>
 
-<p>Modal runs your bot 24/7 in the cloud for free. No credit card required.</p>
+<p>Modal hosts the whole system 24/7 for free. No credit card required.</p>
 
 <div class="step">
   <div class="step-num">1</div>
   <div class="step-body">
     <h3>Create a Modal account</h3>
-    <p>Go to <a href="https://modal.com" target="_blank">modal.com</a> and sign up with Google or GitHub. No credit card needed.</p>
+    <p>Sign up at <a href="https://modal.com" target="_blank">modal.com</a> with Google or GitHub.</p>
   </div>
 </div>
 
 <div class="step">
   <div class="step-num">2</div>
   <div class="step-body">
-    <h3>Install the Modal CLI</h3>
-    <pre><code>pip install modal</code></pre>
-  </div>
-</div>
-
-<div class="step">
-  <div class="step-num">3</div>
-  <div class="step-body">
-    <h3>Authenticate Modal</h3>
-    <pre><code>modal token new</code></pre>
-    <p>A browser window opens — click Approve. You should see <code>Token verified successfully!</code></p>
-  </div>
-</div>
-
-<div class="step">
-  <div class="step-num">4</div>
-  <div class="step-body">
-    <h3>Verify it works</h3>
-    <pre><code>modal profile current</code></pre>
-    <p>Should print your Modal workspace name.</p>
+    <h3>Install and authenticate the CLI</h3>
+    <pre><code>pip install modal
+modal token new</code></pre>
+    <p>A browser window opens — click Approve. Verify with <code>modal profile current</code> (prints your workspace name).</p>
   </div>
 </div>
 
 <!-- STEP 4 -->
-<h2 id="step4">Step 4 — Set Up Slack Notifications <span class="badge badge-blue">Optional</span></h2>
+<h2 id="step4">Step 4 — Slack Notifications <span class="badge badge-blue">Optional</span></h2>
 
-<p>Slack notifications tell you when the bot detects a signal, what trades it made, fill prices vs bar close prices, and when approval is needed.</p>
+<p>Slack is WealthOS's voice: signal detections, execution reports with fill prices vs bar close, approval requests, health alerts.</p>
 
 <ol>
   <li>Go to <a href="https://api.slack.com/messaging/webhooks" target="_blank">api.slack.com/messaging/webhooks</a></li>
-  <li>Click <strong>Create your Slack app</strong> → From scratch</li>
-  <li>Name it "Signal Bot", pick your workspace</li>
-  <li>Go to <strong>Incoming Webhooks</strong> → toggle ON</li>
-  <li>Click <strong>Add New Webhook to Workspace</strong>, pick a channel</li>
+  <li><strong>Create your Slack app</strong> → From scratch → name it, pick your workspace</li>
+  <li><strong>Incoming Webhooks</strong> → toggle ON → <strong>Add New Webhook to Workspace</strong></li>
   <li>Copy the webhook URL</li>
 </ol>
 
-<p>If you skip this step the bot still runs — you'll just need to check the web dashboard manually.</p>
+<p>Skipping this is fine — the dashboard shows everything; you'll just check it manually.</p>
 
 <!-- STEP 5 -->
-<h2 id="step5">Step 5 — Install & Deploy</h2>
+<h2 id="step5">Step 5 — Install &amp; Deploy</h2>
 
 <div class="step">
   <div class="step-num">1</div>
   <div class="step-body">
-    <h3>Install Python 3.12</h3>
-    <p>Download from <a href="https://python.org/downloads" target="_blank">python.org</a>. During installation check <strong>"Add python.exe to PATH"</strong>.</p>
+    <h3>Install Python 3.12+</h3>
+    <p>From <a href="https://python.org/downloads" target="_blank">python.org</a> — check <strong>"Add python.exe to PATH"</strong> during install.</p>
   </div>
 </div>
 
 <div class="step">
   <div class="step-num">2</div>
   <div class="step-body">
-    <h3>Download the bot code</h3>
-    <p>Option A — using git:</p>
+    <h3>Get the code</h3>
     <pre><code>git clone https://github.com/feartherealworld/PortfolioAutomation.git
-cd trw</code></pre>
-    <p>Option B — download ZIP from GitHub (green Code button → Download ZIP), extract it, open a terminal in the folder.</p>
+cd PortfolioAutomation
+pip install -r requirements.txt</code></pre>
+    <p>(Or download the ZIP from GitHub and extract it.)</p>
   </div>
 </div>
 
 <div class="step">
   <div class="step-num">3</div>
   <div class="step-body">
-    <h3>Install dependencies</h3>
-    <pre><code>pip install -r requirements.txt</code></pre>
-  </div>
-</div>
-
-<div class="step">
-  <div class="step-num">4</div>
-  <div class="step-body">
     <h3>Launch the setup manager</h3>
     <pre><code>python manage.py</code></pre>
-    <p>A browser page opens. Fill in:</p>
-    <ul>
-      <li>Your TRW session token from Step 1</li>
-      <li>Your Hyperliquid API private key and master address from Step 2</li>
-      <li>Your Slack webhook URL from Step 4 (optional)</li>
-      <li>A username and password for your dashboard (recommended)</li>
-    </ul>
-    <p>Click <strong>Save & Deploy</strong>. The manager handles everything — saving tokens, creating Modal secrets, and deploying the bot.</p>
+    <p>A browser page opens. Fill in your TRW token, Hyperliquid keys, Slack webhook (optional), and a dashboard username + password. Click <strong>Save &amp; Deploy</strong> — the manager creates the Modal secrets and deploys everything.</p>
   </div>
 </div>
 
 <div class="success">
-  ✓ After a successful deploy you'll see your dashboard URL. Bookmark it on your phone.
+  ✓ After a successful deploy you'll see your dashboard URL — <code>https://YOUR_WORKSPACE--signal-bot-web.modal.run</code>. Bookmark it on your phone.
 </div>
 
 <!-- STEP 6 -->
 <h2 id="step6">Step 6 — Test Everything</h2>
 
-<p>Run these tests to confirm everything is wired up correctly before leaving it to run overnight.</p>
-
-<h3>Test 1 — Connections (TRW, Hyperliquid, Slack)</h3>
+<h3>Test 1 — Connections</h3>
 <pre><code>python manage.py</code></pre>
-<p>The manager page shows a live connection status check for every service.</p>
+<p>The manager shows a live connection check for TRW, Hyperliquid, and Slack. The dashboard header shows the same as glowing <strong>TRW / HL / SLACK</strong> badges.</p>
 
 <h3>Test 2 — Dashboard</h3>
-<p>Open your dashboard URL. Log in with your credentials. You should see your positions and the latest signal.</p>
+<p>Open your dashboard URL. Sign in — the session lasts 30 days per device. You should see the RSPS tab with your account value and the latest signal.</p>
 
 <h3>Test 3 — Slack</h3>
-<pre><code>python -c "
-import os, requests
-from dotenv import load_dotenv
-load_dotenv()
-r = requests.post(os.getenv('SLACK_WEBHOOK_URL'), json={'text': 'Signal bot test notification'})
-print(r.status_code, r.text)
-"</code></pre>
-<p>Should print <code>200 ok</code> and a message should appear in your Slack channel.</p>
+<pre><code>python slack_tests.py --only rebalance</code></pre>
+<p>Fires a sample execution report at your webhook so you know what real ones look like.</p>
 
 <!-- DASHBOARD -->
-<h2 id="dashboard">Using the Dashboard</h2>
+<h2 id="dashboard">The Dashboard</h2>
 
-<p>Your dashboard URL format is:</p>
-<pre><code>https://YOUR_WORKSPACE--signal-bot-web.modal.run</code></pre>
+<p>Four tabs behind one login. Numbers count up as they load, panels cascade in, and everything works one-handed on a phone at midnight.</p>
 
-<p>The manager shows your exact URL after deploy. Bookmark it on your phone.</p>
-
-<h3>Features</h3>
+<h3>◈ RSPS — the autopilot</h3>
 <ul>
-  <li><strong>Account value and PnL</strong> — live from Hyperliquid</li>
-  <li><strong>Positions</strong> — current perp positions with entry prices</li>
-  <li><strong>Latest signal</strong> — current allocations from Prof Adam</li>
-  <li><strong>Equity curve</strong> — your portfolio value over time. Toggle between Actual vs Bar Close to see execution alpha loss</li>
-  <li><strong>Approve / Dismiss</strong> — act on pending signals during daytime hours</li>
-  <li><strong>Force Rebalance</strong> — manually trigger a rebalance</li>
-  <li><strong>Health Check</strong> — verify TRW and Hyperliquid connections</li>
-  <li><strong>Export CSV</strong> — download equity history for analysis</li>
+  <li><strong>Health badges</strong> — TRW / HL / SLACK status at a glance, plus the current trading mode (Auto or Approval)</li>
+  <li><strong>Metrics</strong> — account value, unrealized PnL, open positions, all-time PnL</li>
+  <li><strong>Equity curve</strong> — toggle <em>Actual</em> vs <em>Daily open</em> to see your execution alpha loss; export CSV</li>
+  <li><strong>Positions</strong> — spot/perp mode tags, entry → mark, PnL, <strong>funding APR</strong> on perps (paying or earning), and liquidation distance on leveraged positions</li>
+  <li><strong>Signal panel</strong> — the latest allocations with animated bars</li>
+  <li><strong>Leverage panel</strong> — flip any asset from spot to leveraged perp (use with care)</li>
+  <li><strong>Actions</strong> — Force Rebalance, Health Check, Refresh, and the <span class="badge badge-yellow">Halt Trading</span> kill switch</li>
+  <li><strong>Approval flow</strong> — pending signals appear as a pulsing amber banner with one-tap Approve / Dismiss; Slack links land here too</li>
 </ul>
 
-<p>The dashboard auto-refreshes every 60 seconds while the tab is open, and pauses when you switch to another app to save compute.</p>
+<h3>◈ Portfolio — your wealth, honestly measured</h3>
+<ul>
+  <li><strong>Hero</strong> — total portfolio value with True P&amp;L (deposits can't fake it), Return on Capital, Time-Weighted Return, and XIRR</li>
+  <li><strong>Risk tiles</strong> — Sharpe, Sortino, annualized volatility, max drawdown, best/worst day — all computed on a flow-adjusted index so deposits never register as gains</li>
+  <li><strong>Chart modes</strong> — <em>Value</em>, <em>vs Deposited</em> (cost basis), <em>Performance</em> (your TWR vs BTC-hold and ETH-hold, all normalized to 100), and <em>Drawdown</em> (underwater curve)</li>
+  <li><strong>Strategy allocation</strong> — designate what % of the portfolio each strategy should run; editable in place</li>
+  <li><strong>Cash flows</strong> — deposits and withdrawals auto-detected from the Hyperliquid ledger, with per-deposit contribution attribution; manual entries supported</li>
+</ul>
+
+<h3>◈ Strategies — the TradingView bridge</h3>
+<p>Add a strategy (name, asset, direction, leverage, paper capital) and WealthOS gives you a webhook token and a ready-made Pine <code>alert()</code> snippet. In TradingView, create <strong>one</strong> alert on your script with condition <em>"Any alert() function call"</em> pointing at the webhook URL. Every long/short/flat flip is then tracked by the paper engine: all-in position simulation, marked-to-market equity curve, sparkline, and signal log per strategy card. Alerts are idempotent — a double-fired TradingView alert can't double-trade.</p>
+<div class="info">Paper mode uses fake capital and places no real orders — forward-test until the equity curve earns your trust. Live routing through the real execution engine arrives with the multi-strategy allocator.</div>
+
+<h3>◈ History — the signal archive lab</h3>
+<ul>
+  <li><strong>Backtest</strong> — replay the full RSPS signal history against Hyperliquid candles with your fee setting; total return, CAGR, max drawdown, win rate</li>
+  <li><strong>Equity curve variants</strong> — signal-price fills vs daily-open fills vs your live recorded equity, merged view included</li>
+  <li><strong>Kelly panel</strong> — per-asset Kelly-criterion allocation estimates with an adjustable fraction slider</li>
+  <li><strong>Signal table</strong> — every parsed signal with allocation pills and day-over-day changes</li>
+</ul>
+
+<!-- SAFETY -->
+<h2 id="safety">Safety &amp; the Kill Switch</h2>
+
+<ul>
+  <li><strong>Kill switch</strong> — one tap on the RSPS tab halts all real execution across every strategy. Signals received while halted stay pending and a red banner shows on every tab. Nothing auto-resumes: you decide.</li>
+  <li><strong>Parse guard</strong> — if allocations don't sum to ~100%, the rebalance aborts before any order is placed.</li>
+  <li><strong>Order caps</strong> — minimum trade size ($10), maximum single order ($50k), 3% slippage limit on market orders.</li>
+  <li><strong>Approval mode</strong> — daytime signals require your explicit approval by default.</li>
+  <li><strong>Full audit trail</strong> — every execution reports to Slack with fills, bar-close deviation, and slippage cost.</li>
+</ul>
 
 <!-- MAINTENANCE -->
 <h2 id="maintenance">Maintenance</h2>
 
-<h3>TRW Token Expired</h3>
-<p>If the bot stops reading signals or you get a Slack auth error notification:</p>
-<ol>
-  <li>Open TRW in your browser, go to the signal channel</li>
-  <li><code>F12</code> → Network → Fetch/XHR → reload → grab new <code>x-session-token</code></li>
-  <li>Run <code>python manage.py</code> → paste the new token → Save & Deploy</li>
-</ol>
+<h3>TRW token expired</h3>
+<p>You'll get a Slack alert. Grab a fresh <code>x-session-token</code> (Step 1) → <code>python manage.py</code> → paste → Save &amp; Deploy. Takes 2 minutes.</p>
 
-<h3>Hyperliquid API Key Expired</h3>
-<p>Keys expire after the validity period you set (max 180 days).</p>
-<ol>
-  <li>Generate a new key at app.hyperliquid.xyz → More → API</li>
-  <li>Run <code>python manage.py</code> → paste the new key → Save & Deploy</li>
-</ol>
+<h3>Hyperliquid API key expired</h3>
+<p>Keys last at most 180 days. Generate a new one (Step 2) → <code>python manage.py</code> → Save &amp; Deploy.</p>
 
-<h3>Updating the Bot</h3>
-<p>If you download an updated version of the code:</p>
-<pre><code>python manage.py</code></pre>
-<p>Click Save & Deploy to redeploy with your existing credentials.</p>
+<h3>Updating WealthOS</h3>
+<pre><code>git pull
+modal deploy modal_signal_bot.py</code></pre>
+<p>Or run <code>python manage.py</code> → Save &amp; Deploy. Your dashboard URL never changes. After deploying, give it a minute before clicking dashboard actions — a warm container can serve one last request with the old code.</p>
 
-<h3>Stopping the Bot</h3>
-<pre><code>modal app stop signal-bot</code></pre>
+<h3>Pause / resume everything</h3>
+<pre><code>modal app stop signal-bot        # pause (crons + dashboard offline)
+modal deploy modal_signal_bot.py # resume</code></pre>
+<p>To pause <em>trading only</em> while keeping the dashboard live, use the kill switch instead.</p>
 
-<h3>Restarting</h3>
-<pre><code>modal deploy modal_signal_bot.py</code></pre>
+<h3>Run the test suite</h3>
+<pre><code>pip install -r requirements-dev.txt
+python -m pytest tests/</code></pre>
 
 <!-- SECURITY -->
-<h2 id="security">Security & Trust</h2>
+<h2 id="security">Security &amp; Trust</h2>
 
-<p>You're about to enter API keys for your trading account into code. Here's what you should know.</p>
+<p>You're entering trading credentials into software — here is exactly what it does with them.</p>
 
-<h3>The code only talks to 3 services — all yours</h3>
+<h3>The code talks to 3 services — all yours</h3>
 <table>
   <tr><th>Service</th><th>URL</th><th>Why</th></tr>
   <tr><td><strong>TRW</strong></td><td>eden.therealworld.ag</td><td>Read signals from the chat</td></tr>
-  <tr><td><strong>Hyperliquid</strong></td><td>api.hyperliquid.xyz</td><td>Read positions and place trades</td></tr>
+  <tr><td><strong>Hyperliquid</strong></td><td>api.hyperliquid.xyz</td><td>Read positions, place orders</td></tr>
   <tr><td><strong>Slack</strong></td><td>Your own webhook URL</td><td>Send YOU notifications</td></tr>
 </table>
-
-<p>No other HTTP calls exist. No data goes to the author or any third party. Zero analytics, zero telemetry.</p>
-
-<h3>Verify it yourself</h3>
-<p>Search each Python file for <code>requests.post</code> and <code>req.post</code>. Every network call goes to one of the 3 URLs above. Or paste any file into Claude or ChatGPT and ask: "Does this code send my credentials anywhere other than TRW, Hyperliquid, and my Slack webhook?"</p>
+<p>No other HTTP calls exist. Zero analytics, zero telemetry, zero third parties. Verify it yourself: search the code for <code>requests.post</code> — every call targets one of the three.</p>
 
 <h3>What the API wallet can and can't do</h3>
 <table>
   <tr><th>Action</th><th>Possible?</th></tr>
   <tr><td>Place and cancel orders</td><td>✓ Yes</td></tr>
-  <tr><td>Withdraw funds</td><td>✗ No — impossible</td></tr>
-  <tr><td>Transfer between wallets</td><td>✗ No — impossible</td></tr>
+  <tr><td>Withdraw funds</td><td>✗ Impossible</td></tr>
+  <tr><td>Transfer between wallets</td><td>✗ Impossible</td></tr>
 </table>
 
-<p>Even if your API key were compromised, your funds cannot be stolen. The worst case is someone opens bad positions — revoke the API wallet at app.hyperliquid.xyz to stop them instantly.</p>
+<h3>Dashboard authentication</h3>
+<p>Login is a POST form that sets an HttpOnly session cookie (30-day validity, revocable by changing your password). Credentials never appear in URLs, browser history, or logs. Only salted digests of session tokens are stored server-side.</p>
 
-<h3>Where your secrets are stored</h3>
+<h3>Where your secrets live</h3>
 <ul>
-  <li><strong>Local .env file</strong> — on your computer only, never committed to Git</li>
-  <li><strong>Modal encrypted secrets</strong> — encrypted at rest, only accessible during function execution in your own Modal account</li>
+  <li><strong>Local <code>.env</code></strong> — your machine only, git-ignored</li>
+  <li><strong>Modal encrypted secrets</strong> — encrypted at rest, readable only by your own functions in your own Modal account</li>
 </ul>
 
 <div class="warn">
   <strong>Rules:</strong><br>
-  Never share your .env file<br>
-  Never paste tokens into AI chats, Discord, or any website<br>
-  Never commit .env to Git (the .gitignore prevents this)<br>
-  If you suspect a key is compromised, revoke the Hyperliquid API wallet immediately at app.hyperliquid.xyz
+  Never share your .env file or paste tokens into AI chats, Discord, or any website.<br>
+  Never commit .env to Git (the .gitignore prevents this).<br>
+  If a key may be compromised, revoke the API wallet at app.hyperliquid.xyz immediately.
 </div>
 
 <!-- FAQ -->
 <h2 id="faq">FAQ</h2>
 
-<h3>Why perps instead of spot?</h3>
-<p>ETH, PAXG and XAUT don't have spot markets on Hyperliquid — they only exist as perps. Using 1x leverage perps gives identical economic exposure to holding spot. All positions use 1x cross leverage with no amplified risk.</p>
+<h3>Spot or perps?</h3>
+<p>Both. Assets with a liquid Hyperliquid spot market (BTC, ETH, SOL, HYPE, …) are bought as real spot tokens. Assets without one (like PAXG) use 1x cross perps — economically identical exposure. Setting leverage &gt; 1 on an asset switches it to a leveraged perp.</p>
+
+<h3>What does "paying 11% APR funding" on a position mean?</h3>
+<p>Perp positions pay or earn a funding rate hourly. The positions table annualizes the current rate and shows whether your side pays (red) or earns (green). Spot positions never pay funding — one reason WealthOS prefers spot.</p>
+
+<h3>Why don't my deposits show up as profit?</h3>
+<p>By design. WealthOS separates money you <em>added</em> from money the strategies <em>made</em>: True P&amp;L, TWR, XIRR, and all risk metrics are computed on a flow-adjusted index. A $1,000 deposit moves your account value, not your returns.</p>
 
 <h3>What if the signal says "No change"?</h3>
-<p>The bot detects this and does nothing. It sends a Slack notification confirming "No change" so you know it's working.</p>
+<p>The bot detects it, does nothing, and sends a confirming Slack note so you know it's alive.</p>
 
-<h3>What if the PAXG trade fails with a minimum order error?</h3>
-<p>Hyperliquid has a minimum order size of ~$10 for PAXG. At small account sizes (under ~$200) the 5.7% PAXG allocation falls below this. ETH and HYPE will still execute correctly. This resolves automatically as your account grows.</p>
+<h3>What if a trade is below Hyperliquid's ~$10 minimum?</h3>
+<p>Small allocation slices on small accounts can fall under the exchange minimum and get skipped — the rest of the rebalance executes normally. This resolves itself as the account grows.</p>
 
-<h3>What if my internet goes down?</h3>
-<p>The bot runs in Modal's cloud, not on your computer. Your internet doesn't matter once deployed.</p>
+<h3>How do paper strategies become live?</h3>
+<p>Forward-test in paper mode until you trust the curve. Live order routing through the shared execution engine (with per-strategy capital slices) ships with the multi-strategy allocator — until then, paper strategies never touch real funds.</p>
 
-<h3>Can I stop the bot temporarily?</h3>
-<pre><code>modal app stop signal-bot</code></pre>
-<p>Restart with <code>modal deploy modal_signal_bot.py</code></p>
+<h3>Can I stop everything temporarily?</h3>
+<p>Kill switch for trading only (dashboard stays up), or <code>modal app stop signal-bot</code> for a full stop.</p>
 
-<h3>How long does the TRW session token last?</h3>
-<p>Session tokens appear to last days to weeks. The bot sends a Slack alert when the token expires. Refreshing takes about 2 minutes.</p>
-
-<h3>What is the bar close equity toggle on the chart?</h3>
-<p>This shows what your portfolio value would be if every trade had executed at the exact bar close price (00:00 UTC). The gap between "Actual" and "Bar close" is your execution alpha loss — how much you paid in slippage and price movement in the minutes between signal detection and fill.</p>
-
-<h3>How do I export my equity history for analysis?</h3>
-<p>Click the <strong>Export CSV</strong> button on the dashboard. Downloads a CSV with columns <code>date</code>, <code>actual_equity_usd</code>, and <code>barclose_equity_usd</code>.</p>
+<h3>What's the "Daily open" toggle on the equity chart?</h3>
+<p>It shows what your equity would be if every fill had happened exactly at the 00:00 UTC daily open. The gap between it and Actual is your execution alpha loss — slippage plus price drift between signal and fill.</p>
 
 <h3>Is this financial advice?</h3>
-<p>No. This is a tool to automate a strategy you've chosen to follow. Always understand the signals before automating them. Use at your own risk.</p>
+<p>No. WealthOS automates strategies you chose. Understand the signals before automating them. Use at your own risk.</p>
 
 </div>
 </body>
