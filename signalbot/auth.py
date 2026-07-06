@@ -15,6 +15,8 @@ __all__ = [
     'verify_credentials',
     'create_session',
     'check_session',
+    'create_session_async',
+    'check_session_async',
 ]
 
 # Dashboard sessions. Tokens are random 256-bit values delivered as an
@@ -58,22 +60,57 @@ def _load_sessions() -> dict[str, int]:
     return {}
 
 
-def create_session() -> str:
-    """Mint a new session token, persist its digest, return the raw token."""
+def _mint(sessions: dict[str, int]) -> tuple[str, dict[str, int]]:
+    """Pure part of session creation: prune expired, add a fresh token, cap."""
     token  = secrets.token_urlsafe(32)
     now_ms = int(time.time() * 1000)
-    sessions = {h: exp for h, exp in _load_sessions().items() if exp > now_ms}
+    sessions = {h: exp for h, exp in sessions.items() if exp > now_ms}
     sessions[_hash(token)] = now_ms + SESSION_TTL_MS
     if len(sessions) > _MAX_SESSIONS:
         for h in sorted(sessions, key=sessions.get)[:len(sessions) - _MAX_SESSIONS]:
             del sessions[h]
+    return token, sessions
+
+
+def _valid(sessions: dict[str, int], token: str) -> bool:
+    if not token:
+        return False
+    exp = sessions.get(_hash(token))
+    return bool(exp and int(exp) > int(time.time() * 1000))
+
+
+def create_session() -> str:
+    """Mint a new session token, persist its digest, return the raw token."""
+    token, sessions = _mint(_load_sessions())
     signal_state[SESSIONS_KEY] = json.dumps(sessions)
     return token
 
 
 def check_session(token: str) -> bool:
     """True when `token` matches an unexpired session."""
-    if not token:
-        return False
-    exp = _load_sessions().get(_hash(token))
-    return bool(exp and exp > int(time.time() * 1000))
+    return _valid(_load_sessions(), token)
+
+
+# Async variants for the web endpoint — the sync Modal Dict calls above fire
+# AsyncUsageWarning (and block the event loop) when used inside FastAPI
+# handlers; these use the .aio interfaces instead.
+
+async def _load_sessions_async() -> dict[str, int]:
+    try:
+        raw = await signal_state.get.aio(SESSIONS_KEY, "{}")
+        d = json.loads(raw) if raw else {}
+        if isinstance(d, dict):
+            return {str(k): int(v) for k, v in d.items()}
+    except Exception:
+        pass
+    return {}
+
+
+async def create_session_async() -> str:
+    token, sessions = _mint(await _load_sessions_async())
+    await signal_state.__setitem__.aio(SESSIONS_KEY, json.dumps(sessions))
+    return token
+
+
+async def check_session_async(token: str) -> bool:
+    return _valid(await _load_sessions_async(), token)

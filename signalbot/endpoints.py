@@ -1,4 +1,5 @@
 import modal
+import asyncio
 import os
 import json
 import re
@@ -366,7 +367,7 @@ def web():
         if not verify_credentials(username, password):
             return HTMLResponse(_login_page(next_q, error=True), status_code=401)
         resp = RedirectResponse("/" + next_q, status_code=303)
-        resp.set_cookie(SESSION_COOKIE, create_session(),
+        resp.set_cookie(SESSION_COOKIE, await create_session_async(),
                         max_age=SESSION_TTL_MS // 1000, path="/",
                         httponly=True, secure=True, samesite="lax")
         return resp
@@ -379,6 +380,21 @@ def web():
         return await _web_handler(request, action, token, points, v)
 
     return api
+
+
+def _portfolio_live_fetch() -> float:
+    """Blocking pre-fetch for the Portfolio tab (HL account value + snapshot
+    + cash-flow sync). Runs via asyncio.to_thread from the async handler."""
+    try:
+        info, _    = get_hl_clients()
+        state      = get_account_state(info)
+        live_value = state["account_value"]
+        record_portfolio_snapshot(live_value)
+        sync_cash_flows(os.environ["HYPERLIQUID_MASTER_ACCOUNT_ADDRESS"])
+        return live_value
+    except Exception as e:
+        print(f"[portfolio] live fetch failed: {e}")
+        return 0.0
 
 
 async def _halt_state_async() -> dict:
@@ -400,7 +416,7 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
     authorized = True   # default: open if no creds configured
     auth = ""           # renderers embed this in links; empty → cookie carries auth
     if auth_configured():
-        authorized = check_session(request.cookies.get(SESSION_COOKIE, ""))
+        authorized = await check_session_async(request.cookies.get(SESSION_COOKIE, ""))
         if not authorized:
             q = str(request.url.query or "")
             return HTMLResponse(_login_page(f"?{q}" if q else ""))
@@ -574,7 +590,7 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
             from fastapi.responses import JSONResponse
             return JSONResponse({"error": "not authorized"}, status_code=403)
         try:
-            sigs = _fetch_history_signals(limit=600)
+            sigs = await asyncio.to_thread(_fetch_history_signals, 600)
             from fastapi.responses import JSONResponse
             return JSONResponse(sigs)
         except Exception as e:
@@ -668,17 +684,9 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
 
     # ── Portfolio tab (main wealth overview) ────────────────────────────────
     if action == "portfolio":
-        # Pre-fetch live account value + sync cash flows in async context
-        live_value = 0.0
-        try:
-            info, _    = get_hl_clients()
-            state      = get_account_state(info)
-            live_value = state["account_value"]
-            record_portfolio_snapshot(live_value)
-            addr = os.environ["HYPERLIQUID_MASTER_ACCOUNT_ADDRESS"]
-            sync_cash_flows(addr)
-        except Exception as e:
-            print(f"[portfolio] live fetch failed: {e}")
+        # Live value fetch does blocking HL HTTP + sync Dict writes — run in a
+        # worker thread so the event loop stays clean (no AsyncUsageWarning).
+        live_value = await asyncio.to_thread(_portfolio_live_fetch)
         # Backfill portfolio history from RSPS equity (RSPS is 100% for now).
         # Only runs when equity has earlier data than portfolio — idempotent.
         try:
@@ -703,12 +711,15 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
         from fastapi.responses import JSONResponse
         try:
             snaps   = json.loads(await signal_state.get.aio("portfolio_snapshots", "[]"))
-            flows   = get_cash_flows()
+            flows   = json.loads(await signal_state.get.aio("cash_flows", "[]"))
+            flows.sort(key=lambda f: f.get("ts", 0))
             # Paper forward-test strategies live in the Strategies tab only — they
             # represent hypothetical capital, so keep them out of the WealthOS
             # allocation view. A signal strategy promoted to LIVE (real capital)
             # does belong here and stays.
-            strats  = [s for s in get_strategies()
+            all_strats = (json.loads(await signal_state.get.aio("strategies", "[]"))
+                          or list(DEFAULT_STRATEGIES))
+            strats  = [s for s in all_strats
                        if not (s.get("kind") == "signal" and s.get("mode") == "paper")]
             live    = v if v > 0 else (snaps[-1]["v"] if snaps else 0)
             metrics = compute_portfolio_metrics(snaps, flows, live)
@@ -927,4 +938,7 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
         "leverage_settings": await signal_state.get.aio("leverage_settings", "{}"),
         "halt":             await signal_state.get.aio("trading_halted",    ""),
     }
-    return HTMLResponse(_render_dashboard(dash_state))
+    # Render in a worker thread: it does blocking TRW/HL fetches and sync
+    # Modal Dict writes (equity snapshot) that would otherwise stall the event
+    # loop and spam AsyncUsageWarning.
+    return HTMLResponse(await asyncio.to_thread(_render_dashboard, dash_state))
