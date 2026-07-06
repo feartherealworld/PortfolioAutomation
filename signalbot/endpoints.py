@@ -15,6 +15,7 @@ from signalbot.hyperliquid import *
 from signalbot.strategies import *
 from signalbot.rebalance import *
 from signalbot.ui import *
+from signalbot.ui2 import *
 from signalbot.safety import *
 from signalbot.auth import *
 
@@ -579,6 +580,20 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
             issues.append(f"Hyperliquid: {e} | {tb.splitlines()[-2].strip()}")
         status = "HEALTHY" if not issues else "ISSUES: " + "; ".join(issues)
         return HTMLResponse(_page("Health Check", status))
+
+    # ── WealthOS Terminal (experimental ground-up UI, side-by-side) ─────────
+    if action == "next":
+        return HTMLResponse(_TERMINAL_HTML)
+
+    if action == "rsps_data":
+        if not authorized:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "not authorized"}, status_code=403)
+        from fastapi.responses import JSONResponse
+        try:
+            return JSONResponse(await asyncio.to_thread(collect_rsps_data))
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
 
     # ── History tab ────────────────────────────────────────────────────────
     if action == "history":
