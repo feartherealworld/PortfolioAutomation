@@ -1,6 +1,6 @@
 # WealthOS
 
-**A self-hosted portfolio command center for Hyperliquid.** Executes Prof Adam's RSPS signal on autopilot, tracks your total wealth with institutional-grade metrics, and bridges any TradingView strategy into paper or live trading — all from one dashboard, running free on Modal.
+**A self-hosted portfolio command center for Hyperliquid.** Executes Prof Adam's RSPS (Relative Strength Portfolio System) signal on autopilot, tracks your total wealth with institutional-grade metrics, and bridges any TradingView strategy into paper or live trading — all from one dashboard, running free on Modal.
 
 > **New here?** The [full setup guide](guide.html) takes you from zero to deployed in ~20 minutes.
 
