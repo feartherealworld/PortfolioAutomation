@@ -599,6 +599,15 @@ def execute_trades(info, exchange, trades: list[dict]) -> list[dict]:
             Decimal(str(trade["size"]))
             .quantize(Decimal(10) ** -sz_dec, rounding=rounding)
         )
+        # A full exit rounded UP can exceed the held size when the balance is
+        # smaller than one size step (dust) or not step-aligned — HL rejects
+        # those with "Insufficient spot balance" on every rebalance. Fall back
+        # to ROUND_DOWN: sellable amount is sold, sub-step dust skips below.
+        if rounding != ROUND_DOWN and size > trade["size"]:
+            size = float(
+                Decimal(str(trade["size"]))
+                .quantize(Decimal(10) ** -sz_dec, rounding=ROUND_DOWN)
+            )
         if size == 0:
             results.append({**trade, "status": "skipped",
                              "reason": "size rounded to 0"})
