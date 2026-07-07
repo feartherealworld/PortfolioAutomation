@@ -112,13 +112,30 @@ function ensure(t){
   return f;
 }
 
+function replay(f){
+  // Re-trigger the embedded page's own entrance cascade (.main>* wosRise).
+  // Pages animate on load, but frames load offscreen now — so replay the
+  // show each time the tab becomes visible. Uses the page's own keyframes,
+  // so prefers-reduced-motion is respected automatically.
+  try{
+    const d = f.contentDocument;
+    if(!d) return;
+    const kids = d.querySelectorAll('.main > *');
+    kids.forEach(k => k.style.animation = 'none');
+    void d.body.offsetWidth;
+    kids.forEach(k => k.style.animation = '');
+  }catch(e){}
+}
+
 function activate(t){
   if(!frames[t]) t = 'portfolio';
   const f = ensure(t);
+  const wasActive = f.classList.contains('on');
   Object.values(frames).forEach(x => x.classList.toggle('on', x === f));
   Object.entries(tabs).forEach(([k, el]) => el.classList.toggle('active', k === t));
   document.getElementById('openFull').href = SRC[t];
   document.getElementById('loadbar').classList.toggle('busy', !f.dataset.loaded);
+  if(!wasActive && f.dataset.loaded) replay(f);
   if(location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
 }
 
