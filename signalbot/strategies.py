@@ -21,6 +21,7 @@ __all__ = [
     '_xirr',
     '_market_index',
     '_risk_metrics',
+    'bc_cumulative_series',
     'compute_portfolio_metrics',
     'get_signal_strategies',
     'get_signal_runtime',
@@ -429,6 +430,52 @@ def compute_portfolio_metrics(snapshots: list[dict], flows: list[dict],
         "risk":          (_risk_metrics(*mkt) if mkt is not None
                           else _risk_metrics([], [])),
     }
+
+
+def bc_cumulative_series(actual: list[dict], bc_points: list[dict]) -> list[dict]:
+    """
+    Dense "daily open" equity series for the RSPS chart toggle.
+
+    bc_points are sparse per-rebalance snapshots (one per fill day) where
+    v = actual_equity_at_that_hour + that_rebalance's execution adjustment.
+    Comparing them directly to the dense actual series is meaningless (2 dots
+    vs 800 points) and non-cumulative. This derives each rebalance's
+    adjustment (bc_v − same-hour actual) and returns the actual series shifted
+    by the RUNNING SUM of adjustments — "what equity would look like if every
+    rebalance since tracking began had filled at the 00:00 UTC daily open".
+    Returns [] when there is no actual history.
+    """
+    if not actual:
+        return []
+    snaps = sorted((s for s in actual if s.get("v", 0) > 0), key=lambda s: s["ts"])
+    if not snaps:
+        return []
+
+    # adjustment per bc point = bc value − actual value in the same hour
+    # (fall back to the latest actual at/before the bc timestamp)
+    by_hour = {s["ts"] // 3_600_000: s["v"] for s in snaps}
+    adjustments: list[tuple[int, float]] = []
+    for p in bc_points:
+        try:
+            ts, v = int(p["ts"]), float(p["v"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        ref = by_hour.get(ts // 3_600_000)
+        if ref is None:
+            prior = [s for s in snaps if s["ts"] <= ts]
+            ref = prior[-1]["v"] if prior else snaps[0]["v"]
+        adjustments.append((ts, v - ref))
+    adjustments.sort(key=lambda a: a[0])
+
+    out, cum, k = [], 0.0, 0
+    for s in snaps:
+        # hour-granular: the adjustment applies from the snapshot of the hour
+        # it was measured against (bc points land moments after that snapshot)
+        while k < len(adjustments) and adjustments[k][0] // 3_600_000 <= s["ts"] // 3_600_000:
+            cum += adjustments[k][1]
+            k += 1
+        out.append({"ts": s["ts"], "v": round(s["v"] + cum, 2)})
+    return out
 
 
 def get_signal_strategies() -> list[dict]:

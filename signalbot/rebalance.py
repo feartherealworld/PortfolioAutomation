@@ -192,10 +192,15 @@ def do_rebalance(parsed: dict, msg_id: str,
             exec_px   = r["avg_price"]
             fill_size = r["filled_size"]
             side      = r.get("side", "buy")
+            # Hypothetical daily-open portfolio: buying at the (higher/lower)
+            # daily open changes cash by (exec - bar) * size relative to the
+            # actual fill; selling by (bar - exec) * size. A buy filled BELOW
+            # the daily open therefore means bc_equity < actual (we beat the
+            # benchmark). Sign was inverted before 2026-07-07 (display-only).
             if side == "buy":
-                bc_adjustment += (bar_px - exec_px) * fill_size
-            else:
                 bc_adjustment += (exec_px - bar_px) * fill_size
+            else:
+                bc_adjustment += (bar_px - exec_px) * fill_size
             bc_has_prices = True
 
         if bc_has_prices and actual_equity > 0:

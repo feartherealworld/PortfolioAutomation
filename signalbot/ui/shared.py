@@ -187,6 +187,7 @@ _NAV_TABS = [
     ("rsps",       "RSPS",       "?"),
     ("history",    "History",    "?action=history"),
     ("strategies", "Strategies", "?action=strategies"),
+    ("instant",    "⚡ Instant",  "?action=app"),   # app shell: kept-alive tabs
 ]
 
 

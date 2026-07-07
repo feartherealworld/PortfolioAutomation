@@ -580,6 +580,10 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
         status = "HEALTHY" if not issues else "ISSUES: " + "; ".join(issues)
         return HTMLResponse(_page("Health Check", status))
 
+    # ── Instant app shell (classic tabs in kept-alive frames) ───────────────
+    if action == "app":
+        return HTMLResponse(_render_shell())
+
     # ── History tab ────────────────────────────────────────────────────────
     if action == "history":
         return HTMLResponse(_render_history(auth, halt=await _halt_state_async()))
@@ -668,16 +672,19 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
         from fastapi.responses import JSONResponse
         return JSONResponse({"ok": True, "stored": 0, "disabled": True})
 
-    # ── Bar-close equity history API ────────────────────────────────────────
+    # ── Bar-close ("daily open") equity history API ─────────────────────────
+    # bc_snapshots stores one sparse point per rebalance-with-fills; the chart
+    # needs a dense series, so return the actual equity curve shifted by the
+    # cumulative execution adjustments (see bc_cumulative_series).
     if action == "bc_equity_history":
         if not authorized:
             from fastapi.responses import JSONResponse
             return JSONResponse({"error": "not authorized"}, status_code=403)
         try:
-            raw   = await signal_state.get.aio("bc_snapshots", "[]")
-            snaps = json.loads(raw)
+            actual = json.loads(await signal_state.get.aio("equity_snapshots", "[]"))
+            bc_pts = json.loads(await signal_state.get.aio("bc_snapshots", "[]"))
             from fastapi.responses import JSONResponse
-            return JSONResponse(snaps)
+            return JSONResponse(bc_cumulative_series(actual, bc_pts))
         except Exception:
             from fastapi.responses import JSONResponse
             return JSONResponse([], status_code=200)
