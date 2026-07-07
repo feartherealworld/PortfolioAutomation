@@ -342,11 +342,23 @@ function filterH(h,r){
 
 let chart=null, range='7d', series='actual';
 function fmt$(v){return'$'+parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function _driftLabel(){
+  // Cumulative execution drift = daily-open equity minus actual, today.
+  // Positive: filling at the 00:00 opens would have left you richer (drift
+  // is your execution cost). Negative: you beat the opens.
+  if(!fullA.length||!fullB.length)return'';
+  const d=fullB[fullB.length-1].value-fullA[fullA.length-1].value;
+  if(!isFinite(d))return'';
+  if(Math.abs(d)<0.005)return' <span style="color:var(--muted);margin-left:6px">· no drift yet</span>';
+  const col=d>0?'var(--red)':'var(--accent)';
+  const txt=d>0?('execution cost $'+d.toFixed(2)):('beat the opens by $'+(-d).toFixed(2));
+  return' <span style="color:'+col+';margin-left:6px">· '+txt+' all-time</span>';
+}
 function buildLegend(a,b){
   const el=document.getElementById('chartLegend');
   let h='';
   if(a)h+='<div class="legend-item"><div class="legend-dot" style="background:#c8f563"></div>Actual equity</div>';
-  if(b)h+='<div class="legend-item"><div class="legend-dot" style="background:#c084fc"></div>Daily open equity</div>';
+  if(b)h+='<div class="legend-item"><div class="legend-dot" style="background:#c084fc"></div>Daily open equity'+_driftLabel()+'</div>';
   if(a&&b)h+='<div class="legend-item" style="color:#888;font-size:10px">gap = intraday timing vs daily open</div>';
   el.innerHTML=h;
 }
