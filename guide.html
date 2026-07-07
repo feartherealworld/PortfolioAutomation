@@ -430,6 +430,29 @@ pip install -r requirements.txt</code></pre>
 <pre><code>git pull
 modal deploy modal_signal_bot.py</code></pre>
 <p>Or run <code>python manage.py</code> → Save &amp; Deploy. Your dashboard URL never changes. After deploying, give it a minute before clicking dashboard actions — a warm container can serve one last request with the old code.</p>
+<p>The bot is a package now (<code>signalbot/</code> next to the entry file), and Modal bundles it
+automatically at deploy — so always update the <strong>whole repo</strong> (git pull or a fresh ZIP);
+copying <code>modal_signal_bot.py</code> alone is not enough.</p>
+
+<h3>Upgrading an old v1 (single-file) instance</h3>
+<p>Same procedure — get the current repo, install requirements, make sure the Modal CLI is
+authenticated to <em>that instance's</em> account, and deploy. v1 and WealthOS use identical
+Modal names (app <code>signal-bot</code>, state <code>signal-bot-state</code>, secrets
+<code>signal-bot-secrets</code>), so the upgrade is in-place: same dashboard URL, secrets kept,
+equity history carried over, new features initialize themselves. If that instance's
+<code>.env</code> predates the dashboard login, run <code>python manage.py</code> once to re-save
+secrets with a username and password.</p>
+
+<h3>Running a second portfolio</h3>
+<div class="warn">
+  <strong>⚠️ One bot per Modal account.</strong> The app, state and secret names are fixed —
+  deploying "another instance" inside the same Modal account <em>replaces</em> the existing bot,
+  and a renamed copy would share its secrets and state (duplicate crons → double trading).
+</div>
+<p>For each additional portfolio: create a separate (free) Modal account, authenticate it with
+<code>modal token new</code>, give it its own <code>.env</code> with that portfolio's keys, and
+deploy. Each instance is fully isolated — own URL, own history, own secrets. Switch accounts in
+the CLI with <code>modal profile activate &lt;name&gt;</code>.</p>
 
 <h3>Pause / resume everything</h3>
 <pre><code>modal app stop signal-bot        # pause (crons + dashboard offline)
