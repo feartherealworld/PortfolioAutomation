@@ -24,8 +24,11 @@ __THEME_HEAD__
   body{display:flex;flex-direction:column;overflow:hidden}
   .header{flex-shrink:0}
   #frames{flex:1;position:relative;min-height:0}
-  #frames iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:none;background:transparent}
-  #frames iframe.on{display:block}
+  /* visibility (not display) keeps hidden frames at full size, so their pages
+     lay out and paint completely offscreen — revealing them is instant */
+  #frames iframe{position:absolute;inset:0;width:100%;height:100%;border:0;visibility:hidden;background:transparent}
+  #frames iframe.on{visibility:visible}
+  .tab-btn.pending{opacity:.45;cursor:progress}
   #loadbar{position:absolute;top:0;left:0;right:0;height:2px;z-index:5;background:var(--grad);
     transform:scaleX(0);transform-origin:left;opacity:0}
   #loadbar.busy{animation:wosLoad 1.2s var(--ease) infinite;opacity:1}
@@ -98,6 +101,7 @@ Object.values(frames).forEach(f => {
   f.addEventListener('load', () => {
     dress(f);
     f.dataset.loaded = '1';
+    tabs[f.dataset.t].classList.remove('pending');
     if(f.classList.contains('on')) document.getElementById('loadbar').classList.remove('busy');
   });
 });
@@ -120,16 +124,13 @@ function activate(t){
 
 addEventListener('hashchange', () => activate(location.hash.slice(1) || 'portfolio'));
 
-// Boot: show the requested tab, then warm the rest in the background so
-// every later switch is instant.
+// Boot: load ALL frames in parallel immediately — the server renders them
+// concurrently, and hidden frames paint fully offscreen (visibility trick),
+// so every tab is genuinely ready, not just requested. Tabs show dimmed
+// until their page has loaded.
+Object.values(tabs).forEach(t => t.classList.add('pending'));
+Object.keys(frames).forEach(t => ensure(t));
 activate(location.hash.slice(1) || 'portfolio');
-let delay = 2500;
-for(const t of Object.keys(frames)){
-  if(!frames[t].getAttribute('src')){
-    setTimeout(() => ensure(t), delay);
-    delay += 2500;
-  }
-}
 </script>
 </body>
 </html>"""
