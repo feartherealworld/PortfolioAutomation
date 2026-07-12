@@ -150,6 +150,17 @@ _THEME_HEAD = r"""
   html.wos-private .eq-val,
   html.wos-private .wos-money{
     filter:blur(9px);user-select:none;pointer-events:none}
+  #wosUpd{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:95;
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:min(680px,94vw);
+    background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.5);border-radius:12px;
+    padding:10px 16px;font-size:12px;color:var(--amber);
+    backdrop-filter:blur(14px);box-shadow:0 14px 40px -12px rgba(0,0,0,.8),0 0 26px -8px rgba(245,166,35,.4);
+    animation:wosHaltIn .5s var(--ease) backwards}
+  #wosUpd .msg{color:var(--muted);font-size:11px}
+  #wosUpd button{background:none;border:1px solid rgba(245,166,35,.5);color:var(--amber);
+    font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    padding:4px 11px;border-radius:999px;cursor:pointer;transition:all .2s}
+  #wosUpd button:hover{background:rgba(245,166,35,.15)}
   #wosEye{position:fixed;right:16px;bottom:16px;z-index:90;width:40px;height:40px;border-radius:50%;
     display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;
     background:var(--glass);border:1px solid var(--border2);backdrop-filter:blur(12px);
@@ -257,6 +268,39 @@ window.wosCountUp=function(root){
     eye.addEventListener('click',()=>wosSetPrivate(!priv()));
     document.body.appendChild(eye);
     wosSetPrivate(priv(),false);
+  });
+})();
+
+/* ── Update banner ───────────────────────────────────────────────────────────
+   Top windows only (shell / standalone pages — not each shell frame). Asks
+   the server whether GitHub main is ahead of the deployed commit; Ignore is
+   stored server-side so it applies on every device. */
+(function(){
+  if(window.top!==window.self)return;
+  addEventListener('DOMContentLoaded',async()=>{
+    let d;
+    try{
+      const r=await fetch('?action=update_check');
+      d=await r.json();
+    }catch(e){return}
+    if(!d||!d.behind||d.ignored)return;
+    const b=document.createElement('div');
+    b.id='wosUpd';
+    b.innerHTML='<span>⬆ <b>Update available</b> — '+d.behind+' new commit'+(d.behind>1?'s':'')+'</span>'+
+      '<span class="msg">'+((d.messages&&d.messages[0])||'').replace(/</g,'&lt;').slice(0,70)+'</span>'+
+      '<button id="wosUpdHow">How to update</button>'+
+      '<button id="wosUpdIgn">Ignore</button>';
+    document.body.appendChild(b);
+    document.getElementById('wosUpdHow').onclick=()=>alert(
+      'On any computer with the repo + Modal access:\n\n'+
+      '  double-click  update.py\n\n'+
+      '(it pulls the latest main and redeploys — one click, ~30s)\n\n'+
+      'Or manually:\n  git pull\n  modal deploy modal_signal_bot.py\n\n'+
+      'Deployed: '+d.current+(d.built?'  ('+d.built+')':'')+'\nLatest:   '+d.latest);
+    document.getElementById('wosUpdIgn').onclick=async()=>{
+      b.remove();
+      try{await fetch('?action=update_ignore&points='+encodeURIComponent(JSON.stringify({sha:d.latest})))}catch(e){}
+    };
   });
 })();
 </script>

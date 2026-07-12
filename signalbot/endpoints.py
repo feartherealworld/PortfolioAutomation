@@ -584,6 +584,66 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
     if action == "app":
         return HTMLResponse(_render_shell())
 
+    # ── Update checker ───────────────────────────────────────────────────────
+    # Compares the baked deployed commit against GitHub main (public API,
+    # cached 30 min in signal_state to stay far from rate limits). Read-only:
+    # updating itself still happens from a machine with Modal access
+    # (update.py) — the container never holds deploy credentials.
+    if action == "update_check":
+        if not authorized:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "not authorized"}, status_code=403)
+        from fastapi.responses import JSONResponse
+        try:
+            from signalbot.version import COMMIT, BUILT
+            ignored = await signal_state.get.aio("update_ignored", "")
+            if COMMIT == "dev":
+                return JSONResponse({"current": "dev", "behind": 0})
+            now_ms = int(time.time() * 1000)
+            cached = {}
+            try:
+                cached = json.loads(await signal_state.get.aio("update_check_cache", "{}"))
+            except Exception:
+                pass
+            if cached.get("current") == COMMIT and now_ms - cached.get("ts", 0) < 1_800_000:
+                data = cached["data"]
+            else:
+                def _gh():
+                    import requests as req
+                    r = req.get("https://api.github.com/repos/feartherealworld/"
+                                f"PortfolioAutomation/compare/{COMMIT}...main",
+                                timeout=15, headers={"Accept": "application/vnd.github+json"})
+                    r.raise_for_status()
+                    j = r.json()
+                    return {
+                        "behind":   int(j.get("ahead_by", 0)),
+                        "latest":   (j.get("commits") or [{}])[-1].get("sha", "")[:12],
+                        "messages": [c.get("commit", {}).get("message", "").split("\n")[0]
+                                     for c in (j.get("commits") or [])[-3:]][::-1],
+                    }
+                data = await asyncio.to_thread(_gh)
+                await signal_state.__setitem__.aio(
+                    "update_check_cache",
+                    json.dumps({"ts": now_ms, "current": COMMIT, "data": data}))
+            return JSONResponse({"current": COMMIT[:12], "built": BUILT, **data,
+                                 "ignored": bool(data.get("latest"))
+                                            and ignored == data.get("latest")})
+        except Exception as e:
+            return JSONResponse({"current": "?", "behind": 0, "error": str(e)})
+
+    if action == "update_ignore":
+        if not authorized:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "not authorized"}, status_code=403)
+        from fastapi.responses import JSONResponse
+        try:
+            data = json.loads(points) if points else {}
+            await signal_state.__setitem__.aio("update_ignored",
+                                               str(data.get("sha", ""))[:40])
+            return JSONResponse({"ok": True})
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
     # ── History tab ────────────────────────────────────────────────────────
     if action == "history":
         return HTMLResponse(_render_history(auth, halt=await _halt_state_async()))

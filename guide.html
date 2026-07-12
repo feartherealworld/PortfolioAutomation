@@ -427,6 +427,12 @@ pip install -r requirements.txt</code></pre>
 <p>Keys last at most 180 days. Generate a new one (Step 2) → <code>python manage.py</code> → Save &amp; Deploy.</p>
 
 <h3>Updating WealthOS</h3>
+<p>The dashboard tells you when GitHub has new commits: an amber <strong>Update available</strong>
+banner appears with the latest change and an <strong>Ignore</strong> button (stored server-side, so
+ignoring once silences that version on every device). To update, on any computer that has the
+repo and Modal access, just double-click <code>update.py</code> — it pulls the latest main and
+redeploys in one go. The cloud bot never updates itself: deploying requires your Modal token,
+which stays on your machines by design. Manual equivalent:</p>
 <pre><code>git pull
 modal deploy modal_signal_bot.py</code></pre>
 <p>Or run <code>python manage.py</code> → Save &amp; Deploy. Your dashboard URL never changes. After deploying, give it a minute before clicking dashboard actions — a warm container can serve one last request with the old code.</p>

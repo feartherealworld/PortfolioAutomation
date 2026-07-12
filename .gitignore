@@ -29,3 +29,6 @@ Thumbs.db
 
 # Claude Code workspace (worktrees, launch config)
 .claude/
+
+# baked at deploy time by modal_signal_bot.py
+signalbot/_build.py
