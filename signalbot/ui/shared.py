@@ -166,7 +166,10 @@ _THEME_HEAD = r"""
     background:var(--glass);border:1px solid var(--border2);backdrop-filter:blur(12px);
     box-shadow:0 10px 26px -10px rgba(0,0,0,.7);transition:all .25s var(--ease);user-select:none}
   #wosEye:hover{border-color:rgba(200,245,99,.45);transform:translateY(-2px)}
+  #wosEye svg{width:18px;height:18px;color:var(--muted);transition:color .25s}
+  #wosEye:hover svg{color:var(--text)}
   html.wos-private #wosEye{border-color:rgba(245,166,35,.55);box-shadow:0 0 18px -6px rgba(245,166,35,.6)}
+  html.wos-private #wosEye svg{color:var(--amber)}
 </style>
 <script>
 /* Privacy mode boots BEFORE first paint so real values never flash. */
@@ -252,11 +255,13 @@ window.wosCountUp=function(root){
       });
     }catch(e){}
   }
+  const EYE_OPEN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17.9 17.9A10.9 10.9 0 0 1 12 19.5C5 19.5 1 12 1 12a20.4 20.4 0 0 1 5.1-5.9M9.9 4.7A10 10 0 0 1 12 4.5c7 0 11 7.5 11 7.5a20.5 20.5 0 0 1-3.2 4.2"/><path d="M9.9 9.9a3 3 0 1 0 4.2 4.2"/><line x1="2" y1="2" x2="22" y2="22"/></svg>';
   window.wosSetPrivate=function(on,store=true){
     document.documentElement.classList.toggle('wos-private',on);
     if(store)try{localStorage.setItem('wos_private',on?'1':'0')}catch(e){}
     const eye=document.getElementById('wosEye');
-    if(eye){eye.textContent=on?'🙈':'👁';eye.title=(on?'Balances hidden':'Balances visible')+' — click to toggle'}
+    if(eye){eye.innerHTML=on?EYE_OFF:EYE_OPEN;eye.title=(on?'Balances hidden':'Balances visible')+' — click to toggle'}
     refreshCharts();
   };
   addEventListener('storage',e=>{           // other tabs/frames toggled it
