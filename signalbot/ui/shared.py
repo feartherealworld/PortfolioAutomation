@@ -136,7 +136,31 @@ _THEME_HEAD = r"""
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
   }
+
+  /* ── Privacy mode: blur every absolute balance, keep curves/percents ── */
+  html.wos-private #heroValue, html.wos-private #heroPnl, html.wos-private #heroDeposited,
+  html.wos-private #mValue, html.wos-private #mDeposited, html.wos-private #mPnl,
+  html.wos-private #accountValue, html.wos-private #totalPnl,
+  html.wos-private #allTimePnl, html.wos-private #allTimePnlSub,
+  html.wos-private #flowSummary,
+  html.wos-private .flow-table td:nth-child(3), html.wos-private .flow-table td:nth-child(4),
+  html.wos-private .pos-table td:nth-child(3), html.wos-private .pos-table td:nth-child(5),
+  html.wos-private .pos-table td:nth-child(6),
+  html.wos-private .strat-meta span:last-child,
+  html.wos-private .eq-val,
+  html.wos-private .wos-money{
+    filter:blur(9px);user-select:none;pointer-events:none}
+  #wosEye{position:fixed;right:16px;bottom:16px;z-index:90;width:40px;height:40px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;
+    background:var(--glass);border:1px solid var(--border2);backdrop-filter:blur(12px);
+    box-shadow:0 10px 26px -10px rgba(0,0,0,.7);transition:all .25s var(--ease);user-select:none}
+  #wosEye:hover{border-color:rgba(200,245,99,.45);transform:translateY(-2px)}
+  html.wos-private #wosEye{border-color:rgba(245,166,35,.55);box-shadow:0 0 18px -6px rgba(245,166,35,.6)}
 </style>
+<script>
+/* Privacy mode boots BEFORE first paint so real values never flash. */
+if(localStorage.getItem('wos_private')==='1')document.documentElement.classList.add('wos-private');
+</script>
 <script>
 /* Count-up for [data-count] elements: parses the freshly rendered text
    (e.g. "$16,294.09", "+11.0%", "1.67") and animates the numeric part from 0.
@@ -164,6 +188,77 @@ window.wosCountUp=function(root){
     })(t0);
   });
 };
+
+/* ── Privacy mode ────────────────────────────────────────────────────────────
+   Blur handled by CSS (html.wos-private). Charts draw values on canvas, so a
+   thin wrapper around Chart masks y-axis ticks and tooltip labels while
+   private — the curve itself stays fully visible. State lives in
+   localStorage per device and syncs live across shell frames via storage
+   events. */
+(function(){
+  const priv=()=>document.documentElement.classList.contains('wos-private');
+  const MASK='•••';
+
+  if(window.Chart){
+    const O=window.Chart;
+    function wrapTicks(sc){
+      if(!sc)return;
+      sc.ticks=sc.ticks||{};
+      const orig=sc.ticks.callback;
+      sc.ticks.callback=function(v,i,t){
+        if(priv())return MASK;
+        return orig?orig.call(this,v,i,t):this.getLabelForValue?this.getLabelForValue(v):v;
+      };
+    }
+    function wrapTip(cfg){
+      const p=((cfg.options=cfg.options||{}).plugins=cfg.options.plugins||{});
+      const tt=(p.tooltip=p.tooltip||{});
+      const cb=(tt.callbacks=tt.callbacks||{});
+      const orig=cb.label;
+      cb.label=function(ctx){
+        if(priv())return ' '+MASK;
+        return orig?orig.call(this,ctx):undefined;
+      };
+    }
+    const W=function(ctx,cfg){
+      try{
+        const sc=(cfg.options&&cfg.options.scales)||{};
+        Object.keys(sc).forEach(k=>{if(k[0]==='y')wrapTicks(sc[k])});
+        wrapTip(cfg);
+      }catch(e){}
+      return new O(ctx,cfg);
+    };
+    W.prototype=O.prototype;
+    Object.setPrototypeOf(W,O);          // statics: getChart, register, defaults…
+    window.Chart=W;
+  }
+
+  function refreshCharts(){
+    try{
+      document.querySelectorAll('canvas').forEach(c=>{
+        const ch=window.Chart&&window.Chart.getChart&&window.Chart.getChart(c);
+        if(ch)ch.update('none');
+      });
+    }catch(e){}
+  }
+  window.wosSetPrivate=function(on,store=true){
+    document.documentElement.classList.toggle('wos-private',on);
+    if(store)try{localStorage.setItem('wos_private',on?'1':'0')}catch(e){}
+    const eye=document.getElementById('wosEye');
+    if(eye){eye.textContent=on?'🙈':'👁';eye.title=(on?'Balances hidden':'Balances visible')+' — click to toggle'}
+    refreshCharts();
+  };
+  addEventListener('storage',e=>{           // other tabs/frames toggled it
+    if(e.key==='wos_private')wosSetPrivate(e.newValue==='1',false);
+  });
+  addEventListener('DOMContentLoaded',()=>{
+    const eye=document.createElement('div');
+    eye.id='wosEye';
+    eye.addEventListener('click',()=>wosSetPrivate(!priv()));
+    document.body.appendChild(eye);
+    wosSetPrivate(priv(),false);
+  });
+})();
 </script>
 """
 
