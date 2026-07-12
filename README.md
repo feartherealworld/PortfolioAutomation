@@ -61,6 +61,7 @@ Safety rails: a manual **kill switch** gates every real order; allocation-sum va
 | `signalbot/endpoints.py` | Web app, TradingView webhook, cron functions |
 | `signalbot/ui/` | Dashboard — one module per tab + shared design system |
 | `tests/` | 48 pytest tests pinning parsing, rebalance math, metrics, auth |
+| `update.py` | **Double-click updater** — pulls latest main and redeploys |
 | `slack_tests.py` | Fire sample notifications at your Slack webhook |
 | `guide.html` | Full setup guide |
 
