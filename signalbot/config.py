@@ -80,6 +80,7 @@ DEFAULT_STRATEGIES = [
     {
         "id":          "rsps",
         "name":        "RSPS",
+        "description": "Relative Strength Portfolio System — Prof Adam signals",
         "target_pct":  100.0,
         "status":      "active",
         "source":      "signal_bot",
