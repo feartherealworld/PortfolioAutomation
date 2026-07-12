@@ -150,6 +150,12 @@ _THEME_HEAD = r"""
   html.wos-private .eq-val,
   html.wos-private .wos-money{
     filter:blur(9px);user-select:none;pointer-events:none}
+  /* blur must scale with font size — 9px on the 62px hero was readable */
+  html.wos-private #heroValue{filter:blur(30px)}
+  html.wos-private #heroPnl, html.wos-private #heroDeposited{filter:blur(12px)}
+  html.wos-private #mValue, html.wos-private #mDeposited, html.wos-private #mPnl,
+  html.wos-private #accountValue, html.wos-private #totalPnl,
+  html.wos-private #allTimePnl, html.wos-private .eq-val{filter:blur(14px)}
   #wosUpd{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:95;
     display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:min(680px,94vw);
     background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.5);border-radius:12px;
