@@ -376,7 +376,7 @@ def _nav_html(active: str, halt: dict | None = None, main_open: bool = True,
             reason = _html_escape(str(halt.get("reason", "")))
             html += f"""
   <div class="wos-halt">
-    <span>🛑 <b>TRADING HALTED</b> — no signals will execute.</span>
+    <span>⏸ <b>BOT PAUSED</b> — no new orders; positions kept.</span>
     <span style="opacity:.75">{reason}</span>
     <a href="?" style="margin-left:auto;text-decoration:underline">Manage on RSPS tab</a>
   </div>"""

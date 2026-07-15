@@ -118,6 +118,8 @@ __THEME_HEAD__
   .btn-approve:hover{box-shadow:0 0 28px rgba(200,245,99,.55);transform:translateY(-1px)}
   .btn-danger{background:var(--red-dim);border-color:rgba(255,92,92,.4);color:var(--red)}
   .btn-danger:hover{background:rgba(255,92,92,.2);box-shadow:0 0 18px -4px rgba(255,92,92,.5)}
+  .btn-pause{background:rgba(245,166,35,.12);border-color:rgba(245,166,35,.4);color:var(--amber)}
+  .btn-pause:hover{background:rgba(245,166,35,.2);box-shadow:0 0 18px -4px rgba(245,166,35,.5)}
   .btn-export{background:var(--blue-dim);border-color:rgba(91,156,246,.4);color:var(--blue)}
   .btn-export:hover{background:rgba(91,156,246,.2)}
 
@@ -174,9 +176,9 @@ __THEME_HEAD__
 __NAV_PLACEHOLDER__
 <div class="main">
   <div class="halt-banner" id="haltBanner" style="display:none">
-    <span>🛑 TRADING HALTED — no signals will execute.</span>
+    <span>⏸ BOT PAUSED — no new orders will be placed. Positions are kept as-is.</span>
     <span class="reason" id="haltReason"></span>
-    <a class="btn btn-approve" id="resumeBtn" href="?action=resume" style="margin-left:auto" onclick="return confirm('Resume trading? Auto-execution will re-enable.')">Resume trading</a>
+    <a class="btn btn-approve" id="resumeBtn" href="?action=resume" style="margin-left:auto" onclick="return confirm('Resume the bot? Auto-execution will re-enable.')">Resume bot</a>
   </div>
   <div class="pending-banner" id="pendingBanner" style="display:none">
     <div class="pending-label">Approval required</div>
@@ -231,7 +233,8 @@ __NAV_PLACEHOLDER__
     <a href="?action=health" class="btn">Health check</a>
     <a href="?" class="btn" id="refreshBtn">Refresh</a>
     <button class="btn" onclick="toggleLeverage()">⚙ Leverage</button>
-    <a href="?action=halt" class="btn btn-danger" id="killBtn" onclick="return confirm('Halt ALL trading? No signals will execute until you resume.')" style="margin-left:auto">🛑 Halt trading</a>
+    <a href="?action=halt" class="btn btn-pause" id="killBtn" title="Stops new orders — keeps positions" onclick="return confirm('Pause the bot? No new orders will be placed — existing positions are KEPT.')" style="margin-left:auto">⏸ Pause bot</a>
+    <a href="?action=stop_all" class="btn btn-danger" id="stopAllBtn" title="Pause the bot AND market-sell every position to USDC" onclick="return confirm('EMERGENCY STOP\n\nThis pauses the bot AND market-sells ALL open positions to USDC right now.\nReal orders will be placed. Continue?')">🛑 Stop &amp; sell all</a>
   </div>
 
   <!-- Leverage settings panel -->

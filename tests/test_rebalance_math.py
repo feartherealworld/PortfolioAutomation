@@ -91,3 +91,21 @@ def test_mode_change_spot_to_perp_full_swap():
     assert buy["leverage"] == 2
     assert abs(sell["size"] - 0.5) < 1e-9
     assert abs(buy["size"] - 0.5) < 1e-9
+
+
+def test_empty_allocations_close_everything():
+    """The emergency-stop path: compute_rebalance with NO targets must fully
+    exit every open position, spot and perp alike (shorts close via buy)."""
+    positions = {
+        "ETH":  {"size": 0.5,  "mark_px": 3000.0, "mode": "spot"},
+        "PAXG": {"size": 1.2,  "mark_px": 2950.0, "mode": "perp"},
+        "SOL":  {"size": -2.0, "mark_px": 145.0,  "mode": "perp"},
+    }
+    trades = compute_rebalance([], 10_000.0, positions, {}, SPOT_INDEX)
+    by = {t["asset"]: t for t in trades}
+    assert set(by) == {"ETH", "PAXG", "SOL"}
+    assert all(t["target_size"] == 0.0 for t in trades)
+    assert by["ETH"]["side"] == "sell" and by["ETH"]["ticker"] == "@151"
+    assert by["PAXG"]["side"] == "sell" and by["PAXG"]["mode"] == "perp"
+    assert by["SOL"]["side"] == "buy"          # closing a short = buy back
+    assert abs(by["SOL"]["size"] - 2.0) < 1e-9

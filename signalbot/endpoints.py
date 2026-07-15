@@ -537,6 +537,64 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
                                        "Check Modal logs for details."),
                                 status_code=500)
 
+    # ── Emergency stop: pause the bot AND close every position to USDC ──────
+    # Distinct from pause/halt (which keeps positions). Sets the kill switch
+    # first so no signal can re-buy, then market-closes all open positions
+    # using the same execution plumbing as a rebalance (empty target set =
+    # full exit of everything). Owner-triggered only.
+    if action == "stop_all":
+        if not authorized:
+            return HTMLResponse(
+                _page("Not authorised.", "Log in first."), status_code=403)
+
+        def _stop_all():
+            signal_state["trading_halted"] = json.dumps(
+                {"halted": True, "reason": "emergency stop — positions closed",
+                 "ts": int(time.time() * 1000)})
+            info, exchange = get_hl_clients()
+            st = get_account_state(info)
+            open_pos = {k: v for k, v in st["positions"].items()
+                        if abs(v.get("size", 0)) > 0}
+            if not open_pos:
+                send_slack("🛑 *EMERGENCY STOP* — bot paused. "
+                           "No open positions to close.", mention=True)
+                return {"filled": 0, "failed": 0, "skipped": 0}
+            spot_index = build_spot_index(info)
+            trades  = compute_rebalance([], st["account_value"], open_pos,
+                                        {}, spot_index)
+            results = execute_trades(info, exchange, trades)
+            filled  = [r for r in results if r["status"] == "filled"]
+            failed  = [r for r in results
+                       if r["status"] in ("error", "failed", "exception")]
+            skipped = [r for r in results if r["status"] == "skipped"]
+            lines = ["🛑 *EMERGENCY STOP* — bot paused, closing all positions.",
+                     f"{len(filled)} closed · {len(failed)} failed · "
+                     f"{len(skipped)} dust skipped", "──────────────────"]
+            for r in results:
+                tag = "↑ CLOSED (buy)" if r["side"] == "buy" else "↓ SOLD"
+                if r["status"] == "filled":
+                    lines.append(f"{tag} {r['filled_size']:.4f} {r['ticker']} "
+                                 f"@ ${r['avg_price']:,.2f}")
+                elif r["status"] == "skipped":
+                    lines.append(f"— SKIP {r['ticker']}: {r.get('reason', '?')}")
+                else:
+                    lines.append(f"✗ FAIL {r['ticker']}: {r.get('error', '?')}")
+            send_slack("\n".join(lines), mention=True)
+            return {"filled": len(filled), "failed": len(failed),
+                    "skipped": len(skipped)}
+
+        try:
+            res = await asyncio.to_thread(_stop_all)
+            return HTMLResponse(_page(
+                "Emergency stop",
+                f"Bot paused — no new orders will be placed.\n"
+                f"Positions closed: {res['filled']}   ·   "
+                f"failed: {res['failed']}   ·   dust skipped: {res['skipped']}\n"
+                f"Resume from the dashboard when ready."))
+        except Exception as e:
+            send_slack(f"🚨 *Emergency stop error*\n`{e}`", mention=True)
+            return HTMLResponse(_page(f"Error: {e}", ""), status_code=500)
+
     # ── Kill switch (halt / resume) ────────────────────────────────────────
     if action in ("halt", "resume"):
         if not authorized:

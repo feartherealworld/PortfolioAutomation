@@ -410,7 +410,8 @@ pip install -r requirements.txt</code></pre>
 <h2 id="safety">Safety &amp; the Kill Switch</h2>
 
 <ul>
-  <li><strong>Kill switch</strong> — one tap on the RSPS tab halts all real execution across every strategy. Signals received while halted stay pending and a red banner shows on every tab. Nothing auto-resumes: you decide.</li>
+  <li><strong>Pause bot</strong> — one tap on the RSPS tab stops all new orders across every strategy while <em>keeping positions as they are</em>. Signals received while paused stay held and a banner shows on every tab. Nothing auto-resumes: you decide.</li>
+  <li><strong>Stop &amp; sell all</strong> — the emergency exit: pauses the bot AND market-sells every open position to USDC in one action, with a full Slack report of the fills. Use when you want to be flat <em>now</em>.</li>
   <li><strong>Parse guard</strong> — if allocations don't sum to ~100%, the rebalance aborts before any order is placed.</li>
   <li><strong>Order caps</strong> — minimum trade size ($10), maximum single order ($50k), 3% slippage limit on market orders.</li>
   <li><strong>Approval mode</strong> — daytime signals require your explicit approval by default.</li>
