@@ -394,6 +394,15 @@ pip install -r requirements.txt</code></pre>
   <li><strong>Cash flows</strong> — deposits and withdrawals auto-detected from the Hyperliquid ledger, with per-deposit contribution attribution; manual entries supported</li>
 </ul>
 
+<h3>◈ SDCA — BTC Strategic Dollar Cost Averaging</h3>
+<p>The Investing Campus SDCA signal, living inside WealthOS: the <strong>EQM Rainbow</strong>
+(kernel-quantile valuation bands), <strong>Composite Risk</strong> blended from four toggleable
+indicators (price valuation, Sharpe, cost-basis P/L, on-chain), and the draggable
+<strong>Accumulation/Distribution curve</strong> that backtests your buy/sell intensity per risk
+level against lump-sum — plus <em>Today's Model Action</em> telling you exactly what the active
+curve says to do right now. Data auto-loads (embedded history + live Binance refresh).
+Display &amp; research only for now — execution wiring comes with the multi-strategy allocator.</p>
+
 <h3>◈ Strategies — the TradingView bridge</h3>
 <p>Add a strategy (name, asset, direction, leverage, paper capital) and WealthOS gives you a webhook token and a ready-made Pine <code>alert()</code> snippet. In TradingView, create <strong>one</strong> alert on your script with condition <em>"Any alert() function call"</em> pointing at the webhook URL. Every long/short/flat flip is then tracked by the paper engine: all-in position simulation, marked-to-market equity curve, sparkline, and signal log per strategy card. Alerts are idempotent — a double-fired TradingView alert can't double-trade.</p>
 <div class="info">Paper mode uses fake capital and places no real orders — forward-test until the equity curve earns your trust. Live routing through the real execution engine arrives with the multi-strategy allocator.</div>

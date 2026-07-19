@@ -335,6 +335,7 @@ def _html_escape(s: str) -> str:
 _NAV_TABS = [
     ("portfolio",  "Portfolio",  "?action=portfolio"),
     ("rsps",       "RSPS",       "?"),
+    ("sdca",       "SDCA",       "?action=sdca"),
     ("history",    "History",    "?action=history"),
     ("strategies", "Strategies", "?action=strategies"),
     ("instant",    "⚡ Instant",  "?action=app"),   # app shell: kept-alive tabs

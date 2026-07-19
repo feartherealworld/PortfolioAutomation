@@ -702,6 +702,10 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
 
+    # ── SDCA tab (BTC Strategic DCA signal — display-only for now) ──────────
+    if action == "sdca":
+        return HTMLResponse(_render_sdca(auth, halt=await _halt_state_async()))
+
     # ── History tab ────────────────────────────────────────────────────────
     if action == "history":
         return HTMLResponse(_render_history(auth, halt=await _halt_state_async()))

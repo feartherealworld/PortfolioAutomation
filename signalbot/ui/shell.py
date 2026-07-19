@@ -51,6 +51,7 @@ __THEME_HEAD__
     <div class="tab-nav" id="tabs">
       <a class="tab-btn" data-t="portfolio">Portfolio</a>
       <a class="tab-btn" data-t="rsps">RSPS</a>
+      <a class="tab-btn" data-t="sdca">SDCA</a>
       <a class="tab-btn" data-t="history">History</a>
       <a class="tab-btn" data-t="strategies">Strategies</a>
     </div>
@@ -62,6 +63,7 @@ __THEME_HEAD__
   <div id="loadbar"></div>
   <iframe data-t="portfolio" title="Portfolio"></iframe>
   <iframe data-t="rsps" title="RSPS"></iframe>
+  <iframe data-t="sdca" title="SDCA"></iframe>
   <iframe data-t="history" title="History"></iframe>
   <iframe data-t="strategies" title="Strategies"></iframe>
 </div>
@@ -74,6 +76,7 @@ __THEME_HEAD__
 const SRC = {
   portfolio:  '?action=portfolio',
   rsps:       '?',
+  sdca:       '?action=sdca',
   history:    '?action=history',
   strategies: '?action=strategies',
 };
