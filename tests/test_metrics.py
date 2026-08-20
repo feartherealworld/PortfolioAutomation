@@ -134,3 +134,44 @@ def test_metrics_include_risk_block():
 def test_metrics_risk_block_empty_history():
     m = compute_portfolio_metrics([], [], 0.0)
     assert m["risk"]["sharpe"] is None
+
+
+# ── Performance window (start_ts) ────────────────────────────────────────────
+
+def test_window_excludes_earlier_drawdown():
+    """Early history polluted by an untracked transfer must stop poisoning the
+    risk block once a start date is set — the exact bug the window fixes."""
+    snaps = _snaps_from_daily([100, 40, 95, 100, 102, 101, 103])   # -60% on day 2
+    all_time = compute_portfolio_metrics(snaps, [], 103.0)
+    windowed = compute_portfolio_metrics(snaps, [], 103.0,
+                                         start_ts=snaps[2]["ts"])
+    assert all_time["risk"]["max_drawdown"] < -0.5      # the crash is in range
+    assert windowed["risk"]["max_drawdown"] > -0.1      # excluded by the window
+    assert windowed["window_start"] == snaps[2]["ts"]
+
+
+def test_window_leaves_money_facts_all_time():
+    """Value/deposits/P&L describe the account, not the window — they must not
+    change when the window moves (else profit is measured against deposits the
+    window dropped)."""
+    snaps = _snaps_from_daily([100, 40, 95, 100, 103])
+    flows = [{"ts": T0 - DAY, "amount": 100.0}]
+    a = compute_portfolio_metrics(snaps, flows, 103.0)
+    b = compute_portfolio_metrics(snaps, flows, 103.0, start_ts=snaps[3]["ts"])
+    for k in ("current_value", "net_deposited", "true_pnl", "simple_return", "xirr"):
+        assert a[k] == b[k], k
+    assert a["risk"]["max_drawdown"] != b["risk"]["max_drawdown"]
+
+
+def test_window_none_is_all_time():
+    snaps = _snaps_from_daily([100, 90, 105])
+    assert (compute_portfolio_metrics(snaps, [], 105.0)["risk"]
+            == compute_portfolio_metrics(snaps, [], 105.0, start_ts=None)["risk"])
+
+
+def test_window_after_all_data_degrades_gracefully():
+    snaps = _snaps_from_daily([100, 90, 105])
+    m = compute_portfolio_metrics(snaps, [], 105.0, start_ts=T0 + 999 * DAY)
+    assert m["twr"] is None
+    assert m["risk"]["sharpe"] is None
+    assert m["current_value"] == 105.0          # money facts still reported

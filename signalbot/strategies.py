@@ -347,7 +347,8 @@ def _risk_metrics(snaps: list[dict], cum_idx: list[float]) -> dict:
 
 
 def compute_portfolio_metrics(snapshots: list[dict], flows: list[dict],
-                              current_value: float) -> dict:
+                              current_value: float,
+                              start_ts: int | None = None) -> dict:
     """
     True performance metrics accounting for cash flows.
       net_deposited : Σ flows (deposits − withdrawals)
@@ -359,6 +360,14 @@ def compute_portfolio_metrics(snapshots: list[dict], flows: list[dict],
                       the actual market path from that deposit's date to now
       risk          : Sharpe/Sortino/vol/max-drawdown/best/worst day (see
                       _risk_metrics), flow-adjusted so deposits aren't "gains"
+
+    `start_ts` (unix ms) windows the *performance* measures — TWR and the risk
+    block — to snapshots at/after that moment. Money facts (current value, net
+    deposited, true P&L, XIRR, per-deposit contributions) stay all-time, since
+    they describe the account itself rather than a period: windowing them would
+    report profit against deposits that were excluded. Early history polluted
+    by an untracked transfer therefore stops poisoning drawdown/vol without
+    distorting what the account is actually worth.
     """
     net_deposited = sum(f["amount"] for f in flows)
     true_pnl      = current_value - net_deposited
@@ -366,11 +375,14 @@ def compute_portfolio_metrics(snapshots: list[dict], flows: list[dict],
     now_ms        = int(time.time() * 1000)
 
     # ── Time-weighted return via chain-linked Modified Dietz ──────────────────
-    mkt = _market_index(snapshots, flows)
+    mkt = _market_index(snapshots, flows)          # all-time: drives injections
+    win_snaps = ([s for s in snapshots if s.get("ts", 0) >= start_ts]
+                 if start_ts else snapshots)
+    mkt_win = _market_index(win_snaps, flows) if start_ts else mkt
     twr = None
-    if mkt is not None:
-        _, cum_idx = mkt
-        twr = cum_idx[-1] - 1.0
+    if mkt_win is not None:
+        _, cum_idx_win = mkt_win
+        twr = cum_idx_win[-1] - 1.0
 
     # ── Per-injection money-weighted contribution ────────────────────────────
     # Each deposit earns the market's growth from its own date to now, taken
@@ -427,8 +439,9 @@ def compute_portfolio_metrics(snapshots: list[dict], flows: list[dict],
         "xirr":          xirr,
         "injections":    injections,
         "flow_count":    len(flows),
-        "risk":          (_risk_metrics(*mkt) if mkt is not None
+        "risk":          (_risk_metrics(*mkt_win) if mkt_win is not None
                           else _risk_metrics([], [])),
+        "window_start":  start_ts or None,
     }
 
 

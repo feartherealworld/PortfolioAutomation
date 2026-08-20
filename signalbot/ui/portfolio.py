@@ -57,6 +57,14 @@ __THEME_HEAD__
   .hero-stat-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
   .hero-stat-val{font-family:var(--font-display);font-size:18px;font-weight:700}
 
+  /* ── Performance window bar ── */
+  .windowbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px}
+  .windowbar-label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .windowbar-since{display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--muted)}
+  .windowbar-since .flow-input{padding:5px 9px;font-size:12px;color-scheme:dark}
+  .windowbar-note{font-size:11px;color:var(--muted2);margin-left:auto}
+
   /* ── Metric tiles ── */
   .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
   .metric{position:relative;background:var(--glass);border:1px solid var(--border);border-radius:14px;padding:16px 18px;
@@ -100,7 +108,8 @@ __THEME_HEAD__
   .status-planned{background:rgba(255,255,255,.05);color:var(--muted);border:1px solid var(--border)}
 
   /* ── Cash flows ── */
-  .flow-table{width:100%;border-collapse:collapse}
+  #flowTableWrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .flow-table{width:100%;border-collapse:collapse;min-width:420px}
   .flow-table th{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500;
     padding:10px 16px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
   .flow-table th:not(:first-child){text-align:right}
@@ -121,13 +130,49 @@ __THEME_HEAD__
     font-family:var(--font-mono);font-size:13px;padding:8px 11px;outline:none;transition:border-color .25s,box-shadow .25s}
   .flow-input:focus{border-color:rgba(200,245,99,.5);box-shadow:0 0 0 3px rgba(200,245,99,.1)}
 
+  /* ── Mobile ─────────────────────────────────────────────────────────────
+     Phones get: tighter rhythm, two-up tiles, controls that scroll instead of
+     wrapping into a tangle, full-width form fields, and tables that scroll
+     inside their panel so the page itself never scrolls sideways. */
   @media(max-width:700px){
     .header,.main{padding-left:14px;padding-right:14px}
-    .hero-value{font-size:42px}
-    .metrics{grid-template-columns:1fr 1fr}
-    .chart-wrap{height:230px}
+    .hero{padding:14px 0 22px}
+    .hero::before{width:280px;height:200px}
+    .hero-value{font-size:40px}
+    .hero-sub{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-top:14px}
+    .hero-stat-val{font-size:16px}
+    .metrics{grid-template-columns:1fr 1fr;gap:8px}
+    .metric{padding:13px 14px;border-radius:12px}
+    .metric-value{font-size:18px}
+    .metric-sub{font-size:10px}
+    .chart-wrap{height:240px}
+    .chart-body{padding:12px}
+    .panel-header{padding:12px 14px}
+    /* one horizontal scroller per control group beats a four-row wrap */
+    .chart-controls{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+      scrollbar-width:none;max-width:100%}
+    .chart-controls::-webkit-scrollbar{display:none}
+    .ctrl-group{flex-shrink:0}
+    .ctrl-btn{padding:6px 12px}
+    .windowbar{gap:8px}
+    .windowbar-note{margin-left:0;width:100%;order:9}
+    .strat-grid{padding:14px;gap:14px}
+    .flow-form{padding:12px 14px;gap:8px}
+    .flow-field{flex:1 1 100%}
+    .flow-field .flow-input{width:100%}
+    .flow-form .btn{flex:1 1 100%;justify-content:center;padding:11px}
+    .footer{flex-direction:column;gap:4px;padding:14px}
   }
-  @media(max-width:480px){.logo{display:none}}
+  @media(max-width:480px){
+    .logo{display:none}
+    .hero-value{font-size:34px}
+    .hero-label{font-size:10px;margin-bottom:6px}
+    .metric{padding:11px 12px}
+    .metric-value{font-size:17px}
+    .chart-wrap{height:210px}
+    .panel-title{font-size:9px}
+    .windowbar-label{display:none}
+  }
 </style>
 </head>
 <body>
@@ -161,6 +206,20 @@ __NAV_PLACEHOLDER__
     </div>
   </div>
 
+  <div class="windowbar">
+    <span class="windowbar-label">Performance window</span>
+    <div class="ctrl-group" id="windowTabs">
+      <button class="ctrl-btn" data-w="30">30d</button>
+      <button class="ctrl-btn" data-w="90">90d</button>
+      <button class="ctrl-btn" data-w="365">1y</button>
+      <button class="ctrl-btn active" data-w="0">All</button>
+    </div>
+    <label class="windowbar-since">from
+      <input type="date" id="windowStart" class="flow-input" aria-label="Performance window start date">
+    </label>
+    <span class="windowbar-note" id="windowNote"></span>
+  </div>
+
   <div class="metrics">
     <div class="metric"><div class="metric-label">Current Value</div><div class="metric-value" id="mValue" data-count>—</div><div class="metric-sub">live</div></div>
     <div class="metric"><div class="metric-label">Total Deposited</div><div class="metric-value" id="mDeposited" data-count>—</div><div class="metric-sub" id="mFlowCount">—</div></div>
@@ -168,7 +227,7 @@ __NAV_PLACEHOLDER__
     <div class="metric"><div class="metric-label">Strategies</div><div class="metric-value" id="mStrats" data-count>—</div><div class="metric-sub">active</div></div>
     <div class="metric"><div class="metric-label">Sharpe</div><div class="metric-value" id="mSharpe" data-count>—</div><div class="metric-sub" id="mSortino">sortino —</div></div>
     <div class="metric"><div class="metric-label">Volatility</div><div class="metric-value" id="mVol" data-count>—</div><div class="metric-sub">annualized</div></div>
-    <div class="metric"><div class="metric-label">Max Drawdown</div><div class="metric-value" id="mMaxDd" data-count>—</div><div class="metric-sub">flow-adjusted, peak to trough</div></div>
+    <div class="metric"><div class="metric-label">Max Drawdown</div><div class="metric-value" id="mMaxDd" data-count>—</div><div class="metric-sub" id="mDdSub">flow-adjusted, peak to trough</div></div>
     <div class="metric"><div class="metric-label">Best / Worst Day</div><div class="metric-value" id="mBestDay" data-count>—</div><div class="metric-sub" id="mWorstDay">—</div></div>
   </div>
 
@@ -185,12 +244,6 @@ __NAV_PLACEHOLDER__
         <div class="ctrl-group" id="benchTabs" style="display:none">
           <button class="ctrl-btn" id="benchBTC" onclick="toggleBench('BTC',this)">vs BTC</button>
           <button class="ctrl-btn" id="benchETH" onclick="toggleBench('ETH',this)">vs ETH</button>
-        </div>
-        <div class="ctrl-group" id="rangeTabs">
-          <button class="ctrl-btn" onclick="setRange('30d',this)">30d</button>
-          <button class="ctrl-btn" onclick="setRange('90d',this)">90d</button>
-          <button class="ctrl-btn" onclick="setRange('1y',this)">1y</button>
-          <button class="ctrl-btn active" onclick="setRange('all',this)">All</button>
         </div>
       </div>
     </div>
@@ -251,22 +304,63 @@ const _auth = new URLSearchParams(window.location.search).get('auth')||'';
 function _ap(){return _auth?'&auth='+encodeURIComponent(_auth):'';}
 
 let _data = null;
-let chart = null, currentSeries='value', currentRange='all';
+let chart = null, currentSeries='value';
+// Performance window (unix ms, 0 = all history). Drives the metric tiles AND
+// the charts, and is remembered server-side so every device agrees.
+let startTs = 0;
 
 function fmt$(v){return '$'+parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function fmtPct(v,d=1){return (v>=0?'+':'')+(v*100).toFixed(d)+'%'}
 
 async function loadData(){
   try{
-    const r = await fetch(`?action=portfolio_data${_ap()}&v=${_liveValue}`);
+    // The server fetches the live account value itself, so this tab shows the
+    // same number as the RSPS tab (_liveValue is only the first-paint hint).
+    const r = await fetch(`?action=portfolio_data${_ap()}&v=${_liveValue}&points=${startTs}`);
     if(!r.ok) throw new Error('HTTP '+r.status);
     _data = await r.json();
+    if(typeof _data.start_ts === 'number') startTs = _data.start_ts;
+    syncWindowControls();
     render();
   }catch(e){
     console.error('portfolio load failed', e);
     document.getElementById('noHistory').textContent = 'Failed to load: '+e.message;
   }
 }
+
+// ── Performance window control ───────────────────────────────────────────────
+function syncWindowControls(){
+  const inp = document.getElementById('windowStart');
+  if(inp) inp.value = startTs ? new Date(startTs).toISOString().slice(0,10) : '';
+  const days = startTs ? Math.round((Date.now()-startTs)/86400000) : 0;
+  document.querySelectorAll('#windowTabs .ctrl-btn').forEach(b=>{
+    const w = +b.dataset.w;
+    b.classList.toggle('active', w===0 ? !startTs : (startTs>0 && Math.abs(days-w)<=1));
+  });
+  const note = document.getElementById('windowNote');
+  if(note) note.textContent = startTs
+    ? 'risk stats & charts since '+new Date(startTs).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})
+    : 'risk stats & charts over all history';
+  const ddSub = document.getElementById('mDdSub');
+  if(ddSub) ddSub.textContent = startTs ? 'flow-adjusted, in window' : 'flow-adjusted, peak to trough';
+}
+
+async function setWindow(ts){
+  startTs = Math.max(0, Math.round(ts));   // never |0 — ms timestamps overflow int32
+  syncWindowControls();
+  try{ await fetch(`?action=portfolio_start_save${_ap()}&points=${startTs}`); }catch(e){}
+  await loadData();
+}
+
+document.getElementById('windowTabs').addEventListener('click', e=>{
+  const b = e.target.closest('.ctrl-btn'); if(!b) return;
+  const days = +b.dataset.w;
+  setWindow(days ? Date.now()-days*86400000 : 0);
+});
+document.getElementById('windowStart').addEventListener('change', e=>{
+  const v = e.target.value;
+  setWindow(v ? Date.parse(v+'T00:00:00Z') : 0);
+});
 
 function render(){
   if(!_data) return;
@@ -319,10 +413,9 @@ function render(){
 }
 
 function filterRange(arr){
-  if(currentRange==='all') return arr;
-  const days={'30d':30,'90d':90,'1y':365}[currentRange];
-  const cut=Date.now()-days*86400000;
-  return arr.filter(p=>p.ts>=cut);
+  // One window for the whole pane — the same cut the server used for metrics
+  if(!startTs) return arr;
+  return arr.filter(p=>p.ts>=startTs);
 }
 
 // Collapse to one point per UTC day (keep the last snapshot of each day) so the
@@ -484,7 +577,6 @@ function toggleBench(coin,el){
 }
 
 function setSeries(s,el){currentSeries=s;document.querySelectorAll('#seriesTabs .ctrl-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');document.getElementById('benchTabs').style.display=(s==='perf')?'':'none';renderChart()}
-function setRange(r,el){currentRange=r;document.querySelectorAll('#rangeTabs .ctrl-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderChart()}
 
 const STRAT_COLORS={rsps:'#c8f563',sdca:'#5b9cf6',delta:'#c084fc',yield:'#f5a623',cfd:'#ff5c5c'};
 let stratEdit=false;
@@ -614,7 +706,33 @@ document.getElementById('flowDate').value=new Date().toISOString().slice(0,10);
 if(_auth){
   ['rspsTab','histTab','stratTab'].forEach(id=>{const el=document.getElementById(id);if(el&&!el.href.includes('auth='))el.href+=(el.href.includes('?')?'&':'?')+'auth='+encodeURIComponent(_auth)});
 }
-setInterval(()=>{document.getElementById('footerTime').textContent=new Date().toLocaleString('en-GB',{timeZone:'UTC'})+' UTC'},1000);
+// ── Auto-refresh ─────────────────────────────────────────────────────────────
+// Same 60s cadence as the RSPS tab, but data-only: no page reload, so charts
+// and the entrance animations don't flash. Pauses while the tab is hidden.
+const REFRESH_MS = 60000;
+let _refreshTimer = null, _secs = 0;
+
+function startRefresh(){
+  if(_refreshTimer) return;
+  _refreshTimer = setInterval(()=>{
+    if(document.hidden) return;
+    _secs = 0;
+    loadData();
+  }, REFRESH_MS);
+}
+function stopRefresh(){ clearInterval(_refreshTimer); _refreshTimer = null; }
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ stopRefresh(); }
+  else { _secs = 0; loadData(); startRefresh(); }   // catch up on return
+});
+startRefresh();
+
+setInterval(()=>{
+  _secs++;
+  const left = Math.max(0, Math.round((REFRESH_MS - _secs*1000)/1000));
+  document.getElementById('footerTime').textContent =
+    new Date().toLocaleString('en-GB',{timeZone:'UTC'})+' UTC  ·  refresh in '+left+'s';
+},1000);
 
 loadData();
 </script>

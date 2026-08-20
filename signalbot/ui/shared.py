@@ -137,6 +137,7 @@ _THEME_HEAD = r"""
     *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
   }
 
+
   /* ── Privacy mode: blur every absolute balance, keep curves/percents ── */
   html.wos-private #heroValue, html.wos-private #heroPnl, html.wos-private #heroDeposited,
   html.wos-private #mValue, html.wos-private #mDeposited, html.wos-private #mPnl,
@@ -176,6 +177,21 @@ _THEME_HEAD = r"""
   #wosEye:hover svg{color:var(--text)}
   html.wos-private #wosEye{border-color:rgba(245,166,35,.55);box-shadow:0 0 18px -6px rgba(245,166,35,.6)}
   html.wos-private #wosEye svg{color:var(--amber)}
+  /* ── Mobile chrome ──────────────────────────────────────────────────────
+     Six tabs never fit a phone: let the pill bar scroll horizontally (hidden
+     scrollbar) instead of wrapping into stacked rows that push content down. */
+  @media(max-width:700px){
+    .header{padding:10px 14px;gap:8px}
+    .header-left{gap:10px;min-width:0;flex:1}
+    .tab-nav{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+      max-width:100%;flex-wrap:nowrap;scroll-snap-type:x proximity}
+    .tab-nav::-webkit-scrollbar{display:none}
+    .tab-btn{flex-shrink:0;padding:7px 13px;scroll-snap-align:center}
+    .main{padding:16px 14px}
+    .wos-halt{padding:10px 13px;font-size:11px}
+    #wosEye{right:12px;bottom:12px;width:44px;height:44px}   /* thumb-sized */
+    #wosUpd{top:8px;max-width:calc(100vw - 16px);padding:9px 13px;gap:8px}
+  }
 </style>
 <script>
 /* Privacy mode boots BEFORE first paint so real values never flash. */

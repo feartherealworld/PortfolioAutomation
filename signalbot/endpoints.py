@@ -850,12 +850,48 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
                           or list(DEFAULT_STRATEGIES))
             strats  = [s for s in all_strats
                        if not (s.get("kind") == "signal" and s.get("mode") == "paper")]
-            live    = v if v > 0 else (snaps[-1]["v"] if snaps else 0)
-            metrics = compute_portfolio_metrics(snaps, flows, live)
+
+            # Live account value, fetched server-side on every poll so this tab
+            # tracks the same number the RSPS tab shows (it used to reuse the
+            # value baked into the page at render time and drifted for as long
+            # as the tab stayed open). Falls back to the client hint, then the
+            # last snapshot, if Hyperliquid is unreachable.
+            live = 0.0
+            try:
+                def _live():
+                    info, _ = get_hl_clients()
+                    val = get_account_state(info)["account_value"]
+                    if val > 0:
+                        record_portfolio_snapshot(val)   # portfolio series only:
+                        # the RSPS equity series is written by the RSPS paths, so
+                        # the two stay separable once strategies get sub-accounts
+                    return val
+                live = await asyncio.to_thread(_live)
+                if live > 0:
+                    snaps = json.loads(
+                        await signal_state.get.aio("portfolio_snapshots", "[]"))
+            except Exception as e:
+                print(f"[portfolio_data] live fetch failed: {e}")
+            if live <= 0:
+                live = v if v > 0 else (snaps[-1]["v"] if snaps else 0)
+
+            # Performance window: an explicit ?start= wins, else the stored
+            # preference. Applies to TWR/risk and the charts only.
+            start_ts = 0
+            try:
+                start_ts = int(points) if points else int(
+                    await signal_state.get.aio("portfolio_start_ts", "0") or 0)
+            except (TypeError, ValueError):
+                start_ts = 0
+
+            metrics = compute_portfolio_metrics(snaps, flows, live,
+                                                start_ts=start_ts or None)
             # Flow-adjusted TWR index series — powers the Performance and
             # Drawdown chart modes (deposits never show up as gains there).
             index_series = []
-            mkt = _market_index(snaps, flows)
+            win_snaps = ([s for s in snaps if s.get("ts", 0) >= start_ts]
+                         if start_ts else snaps)
+            mkt = _market_index(win_snaps, flows)
             if mkt is not None:
                 index_series = [{"ts": s["ts"], "v": round(ix, 6)}
                                 for s, ix in zip(*mkt)]
@@ -865,6 +901,7 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
                 "strategies":   strats,
                 "metrics":      metrics,
                 "index_series": index_series,
+                "start_ts":     start_ts or 0,
             })
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
@@ -895,6 +932,19 @@ async def _web_handler(request, action: str, token: str, points: str, v: float):
             return JSONResponse(out)
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
+
+    # Remember the Portfolio tab's performance window (applies on every device)
+    if action == "portfolio_start_save":
+        if not authorized:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "not authorized"}, status_code=403)
+        from fastapi.responses import JSONResponse
+        try:
+            ts = int(points) if points else 0
+            await signal_state.__setitem__.aio("portfolio_start_ts", str(max(0, ts)))
+            return JSONResponse({"ok": True, "start_ts": max(0, ts)})
+        except (TypeError, ValueError) as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
 
     if action == "cashflow_add":
         if not authorized:
