@@ -27,10 +27,23 @@ def main():
     branch = subprocess.run(["git", "branch", "--show-current"], cwd=REPO,
                             capture_output=True, text=True).stdout.strip()
     if branch != "main":
-        print(f"\n✗ This checkout is on branch '{branch}', not 'main'.")
-        print("  Updates deploy the released main branch. Run: git checkout main")
-        input("Press Enter to close…")
-        sys.exit(1)
+        # Previewing a design branch is normal here, so offer the switch
+        # instead of just refusing — but never switch over uncommitted work.
+        print(f"\nThis checkout is on branch '{branch}', not 'main'.")
+        print("Updates deploy the released main branch.")
+        stray = subprocess.run(["git", "status", "--porcelain"], cwd=REPO,
+                               capture_output=True, text=True).stdout.strip()
+        if stray:
+            print("\n✗ There are uncommitted changes here, so switching is unsafe:")
+            print("  " + "\n  ".join(stray.splitlines()[:8]))
+            print("\n  Commit or stash them, then run this again.")
+            input("Press Enter to close…")
+            sys.exit(1)
+        if input("Switch to main and update? [y/N] ").strip().lower() not in ("y", "yes"):
+            print(f"\nLeft on '{branch}'. Nothing was changed.")
+            input("Press Enter to close…")
+            sys.exit(1)
+        run("Switch to main", ["git", "checkout", "main"])
 
     dirty = subprocess.run(["git", "status", "--porcelain"], cwd=REPO,
                            capture_output=True, text=True).stdout.strip()
