@@ -2,12 +2,9 @@
 and the WealthOS "aurora glass" design system: every tab injects _theme_head()
 (design tokens + glass components + motion) via __THEME_HEAD__ and gets the
 animated backdrop + nav from _nav_html() via __NAV_PLACEHOLDER__."""
-from contextvars import ContextVar
-
 from signalbot.config import *
 
-__all__ = ['_html_escape', '_page', '_nav_html', '_theme_head',
-           'set_ui_theme', 'get_ui_theme']
+__all__ = ['_html_escape', '_page', '_nav_html', '_theme_head']
 
 
 # ── Design system ─────────────────────────────────────────────────────────────
@@ -16,9 +13,7 @@ __all__ = ['_html_escape', '_page', '_nav_html', '_theme_head',
 # alive. Motion: panels cascade up on load, numbers count up ([data-count]),
 # active nav is a glowing pill. All motion sits behind prefers-reduced-motion.
 
-# The stylesheet is theme-specific; the behaviour below it (privacy mode,
-# count-up, update banner) is shared by every theme.
-_THEME_STYLE = r"""
+_THEME_HEAD = r"""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -75,10 +70,6 @@ _THEME_STYLE = r"""
   .tab-btn:hover:not(.active){color:var(--text);transform:translateY(-1px)}
   .tab-btn.active{color:#10130a;background:var(--grad);font-weight:500;
     box-shadow:0 0 20px rgba(200,245,99,.35),0 2px 10px rgba(0,0,0,.45)}
-  .theme-switch{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;
-    border-radius:50%;border:1px solid var(--border);color:var(--muted);font-size:13px;flex-shrink:0;
-    transition:color .25s var(--ease),border-color .25s var(--ease),transform .25s var(--ease)}
-  .theme-switch:hover{color:var(--accent);border-color:var(--border2);transform:rotate(180deg)}
   .pulse-dot{position:relative;width:9px;height:9px;border-radius:50%;background:var(--accent);
     box-shadow:0 0 12px rgba(200,245,99,.9);flex-shrink:0}
   .pulse-dot::after{content:'';position:absolute;inset:-5px;border-radius:50%;
@@ -201,9 +192,8 @@ _THEME_STYLE = r"""
     #wosEye{right:12px;bottom:12px;width:44px;height:44px}   /* thumb-sized */
     #wosUpd{top:8px;max-width:calc(100vw - 16px);padding:9px 13px;gap:8px}
   }
-</style>"""
-
-_THEME_JS = r"""<script>
+</style>
+<script>
 /* Privacy mode boots BEFORE first paint so real values never flash. */
 if(localStorage.getItem('wos_private')==='1')document.documentElement.classList.add('wos-private');
 </script>
@@ -344,31 +334,9 @@ window.wosCountUp=function(root){
 """
 
 
-
-# Active UI theme for the current request. "aurora" is the classic
-# aurora-glass look; "liquid" is the Apple-style Liquid Glass alternative.
-# A ContextVar keeps concurrent requests in the ASGI app from crossing wires.
-_ui_theme: ContextVar[str] = ContextVar("wos_ui_theme", default="aurora")
-
-
-def set_ui_theme(name: str) -> str:
-    """Select the theme for this request. Returns the name actually applied."""
-    theme = "liquid" if str(name).lower() == "liquid" else "aurora"
-    _ui_theme.set(theme)
-    return theme
-
-
-def get_ui_theme() -> str:
-    return _ui_theme.get()
-
-
 def _theme_head() -> str:
-    """Theme <head> payload: fonts, design tokens, components, motion — plus
-    the shared behaviour scripts every theme relies on."""
-    if _ui_theme.get() == "liquid":
-        from signalbot.ui.theme_liquid import LIQUID_STYLE, LIQUID_JS
-        return LIQUID_STYLE + _THEME_JS + LIQUID_JS
-    return _THEME_STYLE + _THEME_JS
+    """Shared <head> payload: fonts, design tokens, glass components, motion."""
+    return _THEME_HEAD
 
 
 def _html_escape(s: str) -> str:
@@ -408,11 +376,6 @@ def _nav_html(active: str, halt: dict | None = None, main_open: bool = True,
         f'id="nav-{key}" href="{href if key != active else "#"}">{label}</a>'
         for key, label, href in _NAV_TABS
     )
-    # one-tap switch between the two design languages (remembered server-side)
-    liquid = _ui_theme.get() == "liquid"
-    theme_btn = (f'<a class="theme-switch" href="?ui={"aurora" if liquid else "liquid"}" '
-                 f'title="Switch to the {"aurora glass" if liquid else "liquid glass"} design">'
-                 f'{"◐" if liquid else "◑"}</a>')
     html = f"""<div class="wos-aurora"></div>
 <div class="wos-grid"></div>
 <div class="header">
@@ -421,7 +384,6 @@ def _nav_html(active: str, halt: dict | None = None, main_open: bool = True,
     <div class="tab-nav">
       {tabs}
     </div>
-    {theme_btn}
   </div>
   {right_extra}
 </div>"""
@@ -447,7 +409,7 @@ def _page(title: str, body: str) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{t}</title>
-  {_theme_head()}
+  {_THEME_HEAD}
   <style>
     body{{display:flex;align-items:center;justify-content:center;padding:28px}}
     .card{{position:relative;background:var(--glass);border:1px solid var(--border);border-radius:18px;

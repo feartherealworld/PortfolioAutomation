@@ -374,10 +374,10 @@ def web():
 
     @api.get("/")
     async def index(request: Request, action: str = "", token: str = "",
-                    auth: str = "", points: str = "", v: float = 0, ui: str = ""):
+                    auth: str = "", points: str = "", v: float = 0):
         # `auth` is accepted-and-ignored so old bookmarked ?auth= URLs and the
         # auth-propagating JS in cached pages keep working (cookie decides).
-        return await _web_handler(request, action, token, points, v, ui)
+        return await _web_handler(request, action, token, points, v)
 
     return api
 
@@ -409,8 +409,7 @@ async def _halt_state_async() -> dict:
     return {"halted": False, "reason": ""}
 
 
-async def _web_handler(request, action: str, token: str, points: str, v: float,
-                       ui: str = ""):
+async def _web_handler(request, action: str, token: str, points: str, v: float):
     from fastapi.responses import HTMLResponse
 
     # ── Auth: session cookie (set by POST /login) ─────────────────────────────
@@ -421,18 +420,6 @@ async def _web_handler(request, action: str, token: str, points: str, v: float,
         if not authorized:
             q = str(request.url.query or "")
             return HTMLResponse(_login_page(f"?{q}" if q else ""))
-
-    # ── UI theme ───────────────────────────────────────────────────────────
-    # ?ui=liquid | ?ui=aurora switches and is remembered server-side, so every
-    # page (and every frame of the instant shell) agrees without a query string.
-    try:
-        if ui:
-            set_ui_theme(ui)
-            await signal_state.__setitem__.aio("ui_theme", get_ui_theme())
-        else:
-            set_ui_theme(await signal_state.get.aio("ui_theme", "aurora"))
-    except Exception:
-        set_ui_theme("aurora")
 
     # ── Helper: auth-preserving redirect back to dashboard ─────────────────
     def _dash_redirect(auth_token: str) -> HTMLResponse:
