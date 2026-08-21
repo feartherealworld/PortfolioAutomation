@@ -89,6 +89,25 @@ __THEME_HEAD__
   .mini:hover{color:var(--accent);border-color:rgba(200,245,99,.4);box-shadow:0 0 10px -3px rgba(200,245,99,.4)}
   .card-foot{padding:10px 16px;display:flex;justify-content:flex-end}
   .footer{color:var(--muted2);text-align:center;justify-content:center}
+
+  /* ── Mobile ── */
+  @media(max-width:700px){
+    .main{padding-left:14px;padding-right:14px}
+    .cards{grid-template-columns:1fr;gap:12px}
+    .card-top,.card-eq,.pos-row,.log,.wh,.card-foot{padding-left:14px;padding-right:14px}
+    .panel-body{padding:14px}
+    .form-grid{grid-template-columns:1fr;gap:8px}
+    .form-foot{flex-wrap:wrap;gap:8px}
+    .form-foot .btn{flex:1 1 100%;justify-content:center;padding:11px}
+    .eq-val{font-size:22px}
+    .code{font-size:10px;padding:8px}
+    .wh-label{flex-wrap:wrap;gap:6px}
+    .footer{padding:14px}
+  }
+  @media(max-width:480px){
+    .card-name{font-size:14px}
+    .intro{font-size:11.5px}
+  }
 </style>
 </head>
 <body>

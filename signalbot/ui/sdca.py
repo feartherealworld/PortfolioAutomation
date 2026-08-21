@@ -118,6 +118,31 @@ __THEME_HEAD__
   .backtestMetric .d{font-size:10px;color:var(--muted)}
   .backtestPlotBox{margin-top:8px}
 
+  /* ── Mobile ── */
+  @media(max-width:700px){
+    .main{padding-left:14px;padding-right:14px}
+    /* desktop chart heights eat several phone screens */
+    #chart{height:400px} #cqmChart{height:330px} #curveChart{height:300px}
+    .tabbar{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .tabbar::-webkit-scrollbar{display:none}
+    .tabbtn{flex-shrink:0}
+    .card{padding:13px 14px}
+    .cqmHead h2,.backtestHead h2{font-size:17px}
+    .cqmBadges{gap:5px}
+    .cqmBadge{font-size:9.5px;padding:2px 7px}
+    .backtestResults{grid-template-columns:1fr 1fr;gap:7px}
+    .backtestMetric{padding:9px 10px}
+    .backtestMetric .v{font-size:14px}
+    .curveEditorHead{gap:8px}
+    .curveEditorBox{padding:6px}
+    .wosClegend{padding:10px 12px 4px;gap:5px 12px;font-size:10px}
+    .wosCbody{padding:2px 6px 8px}
+  }
+  @media(max-width:480px){
+    #chart{height:340px} #cqmChart{height:290px} #curveChart{height:260px}
+    .backtestResults{grid-template-columns:1fr}
+  }
+
 </style>
 </head>
 <body>

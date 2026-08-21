@@ -152,6 +152,14 @@ __THEME_HEAD__
   @media(max-width:600px){
     .header{padding:10px 14px}
     .main{padding:12px 14px}
+    /* positions can still be wider than a phone once dust/funding show */
+    #positionsBody{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    .chart-controls,.actions{flex-wrap:wrap}
+    .actions .btn{flex:1 1 calc(50% - 4px);justify-content:center}
+    .alloc-row{gap:8px;padding:9px 12px}
+    .alloc-pct{min-width:48px;font-size:15px}
+    .lev-row{flex-wrap:wrap;gap:8px}
+    .footer{flex-direction:column;gap:4px;align-items:flex-start}
     .metrics{grid-template-columns:1fr 1fr}
     .metric{padding:13px 14px}
     .metric-value{font-size:18px}

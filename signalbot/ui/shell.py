@@ -26,7 +26,11 @@ __THEME_HEAD__
   #frames{flex:1;position:relative;min-height:0}
   /* visibility (not display) keeps hidden frames at full size, so their pages
      lay out and paint completely offscreen — revealing them is instant */
-  #frames iframe{position:absolute;inset:0;width:100%;height:100%;border:0;visibility:hidden;background:transparent}
+  /* iOS Safari expands an iframe to its content's size instead of honouring
+     width/height — the 1px + min-width trick pins it to the pane, which is
+     what stops the embedded page from being clipped on a phone. */
+  #frames iframe{position:absolute;inset:0;width:1px;min-width:100%;
+    height:1px;min-height:100%;border:0;visibility:hidden;background:transparent}
   #frames iframe.on{visibility:visible}
   .tab-btn.pending{opacity:.45;cursor:progress}
   #loadbar{position:absolute;top:0;left:0;right:0;height:2px;z-index:5;background:var(--grad);

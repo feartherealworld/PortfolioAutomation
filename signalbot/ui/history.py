@@ -202,13 +202,26 @@ __THEME_HEAD__
 
   @media(max-width:700px){
     .header,.main{padding-left:14px;padding-right:14px}
-    .metrics{grid-template-columns:repeat(2,1fr)}
+    .metrics{grid-template-columns:repeat(2,1fr);gap:8px}
     .metric{padding:12px}
     .metric-value{font-size:16px}
-    .chart-wrap{height:200px}
+    .chart-wrap{height:210px}
+    .chart-body,.kelly-body{padding:12px}
     .sig-table .hm{display:none}
     .config-grid{grid-template-columns:1fr 1fr}
+    .config-panel{padding:14px}
+    .config-actions .btn{flex:1 1 100%;justify-content:center;padding:11px}
     .kelly-grid{grid-template-columns:1fr 1fr}
+    /* remaining columns can still exceed a phone — scroll the table, not the page */
+    .table-section{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    .sig-table{min-width:460px}
+    .chart-header,.kelly-header,.table-header{padding:12px 14px}
+    .chart-controls{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+      scrollbar-width:none;max-width:100%}
+    .chart-controls::-webkit-scrollbar{display:none}
+    .ctrl-group{flex-shrink:0}
+    .kelly-fraction-row{gap:10px}
+    .footer{flex-direction:column;gap:4px;padding:14px}
   }
   @media(max-width:480px){.logo{display:none}}
   @media(max-width:420px){.metrics{grid-template-columns:1fr}.config-grid{grid-template-columns:1fr}.kelly-grid{grid-template-columns:1fr}}

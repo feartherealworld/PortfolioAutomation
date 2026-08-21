@@ -34,7 +34,17 @@ _THEME_HEAD = r"""
     --font-mono:'DM Mono',monospace;--font-display:'Syne',sans-serif;
     --ease:cubic-bezier(.22,1,.36,1);
   }
-  html{scrollbar-color:rgba(255,255,255,.16) transparent}
+  html{scrollbar-color:rgba(255,255,255,.16) transparent;
+    /* iOS Safari inflates text in narrow columns unless told not to — that
+       inflation is what pushed the grids wider than the phone viewport */
+    -webkit-text-size-adjust:100%;text-size-adjust:100%}
+  /* Grid/flex children default to min-width:auto, so one long unbreakable
+     label ("TIME-WEIGHTED RETURN") can force a column wider than the screen
+     and push the whole page sideways. Let them shrink and wrap instead. */
+  .metrics>*,.hero-sub>*,.backtestResults>*,.kelly-grid>*,.cards>*,
+  .form-grid>*,.config-grid>*,.strat-grid>*,.grid-2>*,.header-left>*{min-width:0}
+  .metric-label,.metric-sub,.hero-stat-label,.hero-stat-val,
+  .backtestMetric .k,.backtestMetric .d,.strat-desc{overflow-wrap:break-word}
   body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;line-height:1.6;min-height:100vh;overflow-x:hidden}
   ::selection{background:rgba(200,245,99,.25);color:#fff}
   a{color:inherit}
