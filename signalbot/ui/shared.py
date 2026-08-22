@@ -195,9 +195,13 @@ _THEME_HEAD = r"""
      Six tabs never fit a phone: let the pill bar scroll horizontally (hidden
      scrollbar) instead of wrapping into stacked rows that push content down. */
   @media(max-width:700px){
-    .header{padding:10px 14px;gap:8px}
-    .header-left{gap:10px;min-width:0;flex:1}
-    .tab-nav{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+    .header{padding:9px 14px;gap:6px}
+    /* Phone header stacks: wordmark on its own line, tabs on the next.
+       Sharing one row meant the scrollable tab bar could ride over the
+       wordmark; two rows make that impossible rather than merely unlikely. */
+    .header-left{gap:4px 10px;min-width:0;flex:1 1 100%;flex-wrap:wrap}
+    .header-left .logo{flex:0 0 auto;font-size:15px;line-height:1.2}
+    .tab-nav{flex:1 1 100%;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
       max-width:100%;flex-wrap:nowrap;scroll-snap-type:x proximity}
     .tab-nav::-webkit-scrollbar{display:none}
     .tab-btn{flex-shrink:0;padding:7px 13px;scroll-snap-align:center}
