@@ -42,7 +42,11 @@ _THEME_HEAD = r"""
      label ("TIME-WEIGHTED RETURN") can force a column wider than the screen
      and push the whole page sideways. Let them shrink and wrap instead. */
   .metrics>*,.hero-sub>*,.backtestResults>*,.kelly-grid>*,.cards>*,
-  .form-grid>*,.config-grid>*,.strat-grid>*,.grid-2>*,.header-left>*{min-width:0}
+  .form-grid>*,.config-grid>*,.strat-grid>*,.grid-2>*{min-width:0}
+  /* the tab bar may shrink (it scrolls); the wordmark must not — squeezing it
+     below its text width slid the letters under the tabs on a phone */
+  .header-left .tab-nav{min-width:0}
+  .header-left .logo{flex-shrink:0}
   .metric-label,.metric-sub,.hero-stat-label,.hero-stat-val,
   .backtestMetric .k,.backtestMetric .d,.strat-desc{overflow-wrap:break-word}
   body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;line-height:1.6;min-height:100vh;overflow-x:hidden}
@@ -200,6 +204,21 @@ _THEME_HEAD = r"""
     .main{padding:16px 14px}
     .wos-halt{padding:10px 13px;font-size:11px}
     #wosEye{right:12px;bottom:12px;width:44px;height:44px}   /* thumb-sized */
+    /* Dense desktop controls are ~24px tall — too small to hit reliably with a
+       thumb. Give every interactive control a comfortable target on phones. */
+    .ctrl-btn,.mini,.toggle-pill,.tabbtn,.curveResetBtn,.tab-btn{min-height:36px;
+      padding-top:8px;padding-bottom:8px;display:inline-flex;align-items:center}
+    .btn{min-height:40px}
+    input[type=text],input[type=number],input[type=date],select,
+    .flow-input,.inp,.config-input,.strat-pct-input{min-height:38px}
+    input[type=range],.fraction-slider{height:36px}
+    input[type=checkbox]{width:20px;height:20px}
+    /* the 20px box is fine — what must be thumb-sized is the label row that
+       wraps it, since tapping the text toggles the checkbox */
+    .eqmLegendControl,.cqmZToggle,.card .row label,
+    label:has(> input[type=checkbox]){min-height:38px;padding:8px 0;
+      display:inline-flex;align-items:center}
+    .flow-del{padding:6px 10px;font-size:16px}
     #wosUpd{top:8px;max-width:calc(100vw - 16px);padding:9px 13px;gap:8px}
   }
 </style>

@@ -307,7 +307,9 @@ let _data = null;
 let chart = null, currentSeries='value';
 // Performance window (unix ms, 0 = all history). Drives the metric tiles AND
 // the charts, and is remembered server-side so every device agrees.
-let startTs = 0;
+// null means "not asked yet" — the first load must NOT send a window, or it
+// would tell the server 'all history' and overrule the date you saved.
+let startTs = null;
 
 function fmt$(v){return '$'+parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function fmtPct(v,d=1){return (v>=0?'+':'')+(v*100).toFixed(d)+'%'}
@@ -316,7 +318,8 @@ async function loadData(){
   try{
     // The server fetches the live account value itself, so this tab shows the
     // same number as the RSPS tab (_liveValue is only the first-paint hint).
-    const r = await fetch(`?action=portfolio_data${_ap()}&v=${_liveValue}&points=${startTs}`);
+    const win = (startTs === null) ? '' : `&points=${startTs}`;   // omit → use the saved default
+    const r = await fetch(`?action=portfolio_data${_ap()}&v=${_liveValue}${win}`);
     if(!r.ok) throw new Error('HTTP '+r.status);
     _data = await r.json();
     if(typeof _data.start_ts === 'number') startTs = _data.start_ts;
